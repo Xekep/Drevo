@@ -102,7 +102,11 @@ jobs:
           if-no-files-found: error
   e2e:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # Prebaked Chromium and OS dependencies avoid flaky Ubuntu apt mirrors.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -121,16 +125,6 @@ jobs:
         with:
           name: e2e-build
           path: .
-      - name: Install Chromium and system dependencies
-        timeout-minutes: 12
-        run: |
-          # Azure's HTTP mirror can spend most of the job downloading fonts.
-          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
-            if [ -f "$source" ]; then
-              sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
-            fi
-          done
-          npx playwright install --with-deps chromium
       - run: npm run prepare:models
       - name: Repeat native tab gestures in full Chromium
         if: matrix.shard == 1

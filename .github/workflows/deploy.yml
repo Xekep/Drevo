@@ -118,7 +118,11 @@ jobs:
 
   e2e:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # Prebaked Chromium and OS dependencies avoid flaky Ubuntu apt mirrors.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -140,8 +144,6 @@ jobs:
         with:
           name: deploy-e2e-build
           path: .
-      - run: npx playwright install --with-deps chromium
-        timeout-minutes: 12
       - run: npm run prepare:models
       # Отдельный сервер и SQLite на VM; все shards проверяют один dist из prepare.
       - run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
