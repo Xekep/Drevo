@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { inspectSqliteSnapshot } from "../ops/postgres/import-sqlite.ts";
 import { planArchiveAccess } from "../ops/postgres/backfill-archive-access.ts";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
+import { defaultChronicleSettings } from "../src/shared/chronicle-settings.ts";
 
 test("PostgreSQL staging inspects a consistent SQLite copy and every referenced original", () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-pg-stage-"));
@@ -25,6 +26,8 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     const db = new DatabaseSync(sqlite);
     try {
       initializeArchiveSchema(db);
+      db.prepare("INSERT INTO platform_chronicle_settings(id,version,data) VALUES(1,3,?)")
+        .run(JSON.stringify(defaultChronicleSettings));
       db.prepare(
         "INSERT INTO archive(id,title,description,demo,revision) VALUES(1,?,?,0,?)",
       ).run("Архив", "Описание", 3);
@@ -88,7 +91,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.[0]?.event_links, "[]");
     assert.equal(snapshot.rows.get("documents")?.[0]?.pages, "[]");
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
-    assert.equal(snapshot.services.length, 36);
+    assert.equal(snapshot.services.length, 37);
+    assert.deepEqual(snapshot.services.find(table => table.name === "platform_chronicle_settings")?.rows[0]?.data,
+      { id: 1, version: 3, data: JSON.stringify(defaultChronicleSettings) });
     for (const name of ["personal_bookmarks", "personal_people_filters", "audit_reverts"])
       assert.ok(snapshot.services.some(table => table.name === name));
     assert.ok(!snapshot.services.some((table) => table.name === "media_storage_usage"),

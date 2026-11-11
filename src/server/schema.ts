@@ -663,6 +663,11 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     id INTEGER PRIMARY KEY CHECK(id=1),
     data TEXT NOT NULL CHECK(json_valid(data))
   ) STRICT;`);
+  db.exec(`CREATE TABLE IF NOT EXISTS platform_chronicle_settings (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    version INTEGER NOT NULL CHECK(version>0),
+    data TEXT NOT NULL CHECK(json_valid(data) AND json_type(data)='object')
+  ) STRICT;`);
 
   for (let target = current + 1; target <= ARCHIVE_SCHEMA_VERSION; target++) {
     db.exec("BEGIN IMMEDIATE");

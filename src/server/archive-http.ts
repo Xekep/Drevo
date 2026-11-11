@@ -40,6 +40,7 @@ import { aiProviderCleanupHttp } from "./ai-provider-cleanup-http.ts";
 import { aiUsageStore } from "./ai-usage.ts";
 import { researchCatalogStore } from "./research-catalog.ts";
 import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
+import { chronicleSettingsHttp } from "./chronicle-settings-http.ts";
 import { documentsHttp } from "./documents-http.ts";
 import { pdfDocumentPages } from "./document-pdf.ts";
 import { join } from "node:path";
@@ -114,6 +115,7 @@ export async function archiveHttp({
   const aiSettings = await aiSettingsStore(archive.db, aiSecrets);
   const aiUsage = aiUsageStore(archive.db);
   const researchCatalog = researchCatalogStore(archive.db);
+  const chronicleSettings = chronicleSettingsHttp({ auth, db: archive.db, publicOrigin });
   const treePreferences = treePreferencesStore(archive.db);
   const publishedPeople = publishedPeopleHttp({
     archive,
@@ -352,6 +354,7 @@ export async function archiveHttp({
         path === "/api/people/filter" ||
         path === "/api/tree-layout" ||
         path === "/api/research-resources" ||
+        path === "/api/chronicle-settings" ||
         path === "/api/places/locate" ||
         /^\/api\/documents(?:\/[a-f0-9-]{36}(?:\/file|\/annotations(?:\/[a-f0-9-]{36})?)?)?$/.test(
           path,
@@ -430,6 +433,7 @@ export async function archiveHttp({
       }
       if (path === "/api/places/locate")
         return (await places(req, res, inner)) || deny(404);
+      if (path === "/api/chronicle-settings") return (await chronicleSettings(req, res, inner)) || deny(404);
       if (
         path === "/api/family" ||
         path === "/api/people/search" ||
@@ -452,6 +456,7 @@ export async function archiveHttp({
     if (await adminAi(req, res, url)) return true;
     if (await providerCleanupStatus(req, res, url)) return true;
     if (await adminResearchResources(req, res, url)) return true;
+    if (await chronicleSettings(req, res, url)) return true;
     if (await personalTreeSettings(req, res, url)) return true;
     if (await notifications(req, res, url)) return true;
     if (await personalResearch(req, res, url)) return true;

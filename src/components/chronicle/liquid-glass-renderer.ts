@@ -1,4 +1,5 @@
 import { liquidGlassFragment } from "./liquid-glass-shader";
+import { chronicleEffects, chronicleFields, defaultChronicleSettings, type ChronicleNumericKey, type ChronicleSettings } from "../../shared/chronicle-settings.ts";
 
 /** Owns one canvas, two reusable textures and no animation loop. */
 export function createLiquidGlassRenderer(canvas: HTMLCanvasElement) {
@@ -69,8 +70,14 @@ export function createLiquidGlassRenderer(canvas: HTMLCanvasElement) {
       gl.uniform1i(gl.getUniformLocation(program, `uTexture${i + 1}`), i);
     }
     const maximum = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+    const effectType = gl.getUniformLocation(program, "uEffectType");
+    const parameters = (Object.keys(chronicleFields) as ChronicleNumericKey[]).map(key => ({
+      key, uniform: gl.getUniformLocation(program, `u${key[0].toUpperCase()}${key.slice(1)}`),
+    }));
     return {
-      prepare(from: HTMLImageElement, to: HTMLImageElement) {
+      prepare(from: HTMLImageElement, to: HTMLImageElement, settings: ChronicleSettings = defaultChronicleSettings) {
+        gl.uniform1i(effectType, Object.keys(chronicleEffects).indexOf(settings.currentEffect));
+        for (const parameter of parameters) if (parameter.uniform !== null) gl.uniform1f(parameter.uniform, settings[parameter.key]);
         [from, to].forEach((image, i) => {
           if (Math.max(image.naturalWidth, image.naturalHeight) > maximum)
             throw new Error("Снимок слишком велик для перехода");

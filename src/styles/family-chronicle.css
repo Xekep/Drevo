@@ -152,29 +152,23 @@ dialog.editor-dialog.family-chronicle {
 .chronicle-slide-total {
   right: var(--chronicle-spacing);
 }
-.chronicle-controls {
-  position: absolute;
-  top: calc(var(--chronicle-spacing) + 44px);
-  right: var(--chronicle-spacing);
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.chronicle-controls button {
-  min-width: 36px;
-  min-height: 44px;
-  padding: 8px 0;
-}
 .chronicle-caption {
   position: absolute;
   z-index: 3;
   bottom: calc(var(--chronicle-spacing) + 72px);
   left: var(--chronicle-spacing);
-  right: var(--chronicle-spacing);
+  right: auto;
+  max-width: calc(100% - 2 * var(--chronicle-spacing));
   max-height: 65dvh;
-  background: #000b;
+  background: none;
   text-shadow: 0 1px 10px #000;
+}
+.chronicle-caption.is-expanded {
+  width: min(620px, calc(100vw - 2 * var(--chronicle-spacing)));
+  background: #000d;
+  border: 1px solid #fff3;
+  border-radius: 8px;
+  overflow: hidden;
 }
 .chronicle-caption-drawer {
   display: grid;
@@ -198,13 +192,19 @@ dialog.editor-dialog.family-chronicle {
 .family-chronicle .chronicle-caption-summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  width: max-content;
+  max-width: 100%;
   min-height: 48px;
-  padding: 14px 16px;
+  padding: 10px 0;
   text-align: left;
   text-transform: none;
+}
+.family-chronicle .is-expanded .chronicle-caption-summary {
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
 }
 .chronicle-caption-summary svg {
   flex: none;
@@ -238,7 +238,8 @@ dialog.editor-dialog.family-chronicle {
   font-size: 12px;
   color: #fffc;
 }
-.chronicle-date {
+.chronicle-event,
+.chronicle-taken-at {
   margin: 10px 0 0;
   font-family: var(--chronicle-mono);
   font-size: 12px;
@@ -373,12 +374,6 @@ dialog.editor-dialog.family-chronicle {
   dialog.editor-dialog.family-chronicle {
     --chronicle-spacing: 1rem;
   }
-  .chronicle-controls {
-    top: calc(var(--chronicle-spacing) + 44px);
-    left: var(--chronicle-spacing);
-    right: auto;
-    gap: 14px;
-  }
   .family-chronicle .chronicle-slide-nav-item {
     padding: 0.75rem;
     flex-basis: 64px;
@@ -391,3 +386,48 @@ dialog.editor-dialog.family-chronicle {
     transition: none;
   }
 }
+
+.chronicle-settings-panel {
+  position: absolute;
+  z-index: 8;
+  top: calc(var(--chronicle-spacing) + 48px);
+  right: var(--chronicle-spacing);
+  width: min(360px, calc(100vw - 2 * var(--chronicle-spacing)));
+  max-height: calc(100dvh - 100px);
+  overflow: auto;
+  padding: 16px;
+  background: #111f;
+  border: 1px solid #fff3;
+  border-radius: 8px;
+  color: #fff;
+  font: 12px/1.5 var(--chronicle-mono);
+}
+.chronicle-settings-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.chronicle-settings-panel p { color: #fffb; }
+.chronicle-settings-panel fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.chronicle-settings-panel details { margin: 12px 0; border-top: 1px solid #fff3; padding-top: 8px; }
+.chronicle-settings-panel summary { cursor: pointer; margin-bottom: 8px; }
+.chronicle-settings-panel label { display: block; margin: 10px 0; }
+.chronicle-settings-panel label > span { display: flex; align-items: center; gap: 8px; }
+.chronicle-settings-panel input[type="range"] { flex: 1; min-width: 0; accent-color: #fff; }
+.chronicle-settings-panel output { width: 52px; text-align: right; }
+.chronicle-settings-panel select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px;
+  border: 1px solid #fff5;
+  border-radius: 4px;
+  background: #222;
+  color: #fff;
+  font: inherit;
+}
+.chronicle-settings-panel button { border: 1px solid #fff5; border-radius: 4px; padding: 8px; font: inherit; text-transform: none; }
+.chronicle-settings-panel button:focus-visible, .chronicle-settings-panel select:focus-visible { outline: 1px solid #fff; outline-offset: 2px; }
+.chronicle-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.chronicle-settings-error { position: absolute; z-index: 8; top: 80px; right: var(--chronicle-spacing); max-width: 320px; background: #111; padding: 16px; }

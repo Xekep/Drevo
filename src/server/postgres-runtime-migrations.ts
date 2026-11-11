@@ -480,4 +480,9 @@ export const postgresRuntimeMigrations: ReadonlyArray<
     "111_multiple_owned_archives.sql",
     { transaction: "schema" },
   ],
+  [
+    "SELECT to_regclass('platform_chronicle_settings') AS present",
+    "113_chronicle_settings.sql",
+    { transaction: "schema" },
+  ],
 ];

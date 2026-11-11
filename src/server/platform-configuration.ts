@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { StoreDatabase } from "./store-database.ts";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../shared/storage-limits.ts";
+import { initializeChronicleConfiguration } from "./chronicle-settings.ts";
 
 /** Only the primary archive calls this before opening any selected archive. */
 export async function initializePlatformConfiguration(
@@ -117,6 +118,7 @@ export async function initializePlatformConfiguration(
         "INSERT INTO platform_config_migrations(version) VALUES(99)",
       );
     }
+    await initializeChronicleConfiguration(client, primaryArchiveId);
     const installed = await client.query(
       "SELECT 1 FROM platform_config_migrations WHERE version=91",
     );
