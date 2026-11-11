@@ -25,6 +25,21 @@ export function eventHasEvidence(event: PersonEvent): boolean {
     .some((sources) => !!sources?.length);
 }
 
+/** Only explicitly labelled legacy notes can be migrated automatically.
+ * Unlabelled descriptions might be stories, not study programmes. */
+export function migrateLegacyEducationEvent(event: PersonEvent): PersonEvent {
+  if (event.type !== "education" || event.educationField || !event.description)
+    return event;
+  const lines = event.description.split(/\r?\n/);
+  const index = lines.findIndex((line) =>
+    /^\s*(?:специальность|направление(?:\s+(?:подготовки|обучения))?|профиль(?:\s+подготовки)?|образовательная\s+программа)\s*[:：–-]\s*\S+/i.test(line));
+  if (index < 0) return event;
+  const match = lines[index].match(/^\s*[^:：–-]+[:：–-]\s*(.+?)\s*$/);
+  if (!match || match[1].length > 1000) return event;
+  const remaining = lines.filter((_line, position) => position !== index).join("\n").trim();
+  return { ...event, educationField: match[1], description: remaining || undefined };
+}
+
 /** Retyping changes what the event asserts; its old evidence and imported
  * GEDCOM tag cannot describe the new event. The caller must tell the editor. */
 export function retypeEvent(event: PersonEvent, type: PersonEvent["type"]) {
@@ -32,7 +47,10 @@ export function retypeEvent(event: PersonEvent, type: PersonEvent["type"]) {
   const removedDetails = eventHasEvidence(event) || !!(event.dateClaim ||
     event.placeClaim || event.alternatives?.length || event.gedcomTag);
   return { event: { ...event, type, gedcomTag: undefined, sources: undefined,
-    dateClaim: undefined, placeClaim: undefined, alternatives: undefined },
+    dateClaim: undefined, placeClaim: undefined, alternatives: undefined,
+    educationField: undefined, educationQualification: undefined, educationStatus: undefined,
+    organization: undefined, position: undefined, militaryUnit: undefined,
+    militaryRank: undefined, moveFrom: undefined },
   removedDetails };
 }
 export function validateEvents(events: unknown): void {
@@ -57,13 +75,23 @@ export function validateEvents(events: unknown): void {
         !/^[A-Z_][A-Z_0-9]{0,30}$/.test(e.gedcomTag))
     )
       throw new Error("Некорректный тип исходного события");
-    for (const key of ["title", "dateText", "place", "description"] as const)
+    for (const key of ["title", "dateText", "place", "description", "educationField",
+      "educationQualification", "organization", "position", "militaryUnit",
+      "militaryRank", "moveFrom"] as const)
       if (
         e[key] !== undefined &&
         (typeof e[key] !== "string" ||
           e[key].length > (key === "description" ? 10000 : 1000))
       )
         throw new Error("Проверьте описание события");
+    if ((e.educationStatus !== undefined &&
+        !["completed", "ongoing", "unfinished"].includes(e.educationStatus)) ||
+      (e.type !== "education" && (e.educationField !== undefined ||
+        e.educationQualification !== undefined || e.educationStatus !== undefined)) ||
+      (e.type !== "work" && (e.organization !== undefined || e.position !== undefined)) ||
+      (e.type !== "military" && (e.militaryUnit !== undefined || e.militaryRank !== undefined)) ||
+      (e.type !== "move" && e.moveFrom !== undefined))
+      throw new Error("Проверьте дополнительные поля события");
     for (const value of [e.date, e.endDate])
       if (
         value !== undefined &&
