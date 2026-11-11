@@ -784,16 +784,20 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     // Preserve typed event fields even when the person-level Drevo extension
     // was removed by a third-party GEDCOM processor.
     const details: Partial<PersonEvent> = {};
+    let restoredType: PersonEvent["type"] = eventTags[n.tag] || "other";
     const detailsText = value(n, "_DREVO_EVENT_DETAILS");
     if (detailsText) {
       try {
         const raw = JSON.parse(detailsText) as Record<string, unknown>;
         if (!raw || typeof raw !== "object" || Array.isArray(raw))
           throw new Error("invalid detail object");
-        const supported = n.tag === "EDUC"
+        if (n.tag === "EVEN" && ["education", "work", "military", "move"].includes(String(raw.type)))
+          restoredType = raw.type as PersonEvent["type"];
+        const supported = restoredType === "education"
           ? ["educationField", "educationQualification", "educationStatus"]
-          : n.tag === "OCCU" ? ["organization", "position"]
-          : ["militaryUnit", "militaryRank", "moveFrom"];
+          : restoredType === "work" ? ["organization", "position"]
+          : restoredType === "military" ? ["militaryUnit", "militaryRank"]
+          : restoredType === "move" ? ["moveFrom"] : [];
         for (const key of supported) {
           const data = raw[key];
           if (typeof data !== "string" || data.length > 1000) continue;
@@ -815,7 +819,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       ...(value(n, "_DREVO_END_DATE_JULIAN") && validCalendarPair(start && end ? end : undefined, value(n, "_DREVO_END_DATE_JULIAN"))
         ? { endDateJulian: value(n, "_DREVO_END_DATE_JULIAN") } : {}),
       gedcomTag: n.tag,
-      type: eventTags[n.tag] || "other",
+      type: restoredType,
       title:
         value(n, "TYPE") ||
         (n.value && n.value !== "Y" ? n.value : fallback) ||
@@ -2308,7 +2312,7 @@ export function exportGedcom(
           .map((key) => [key, e[key]]),
       );
       if (Object.keys(fields).length)
-        emit(2, "_DREVO_EVENT_DETAILS", JSON.stringify(fields));
+        emit(2, "_DREVO_EVENT_DETAILS", JSON.stringify({ type: e.type, ...fields }));
       for (const index of eventObjects.get(JSON.stringify([p.id, e.id])) || [])
         emit(2, "OBJE", `@M${index}@`, true);
       for (const source of e.sources || []) citation(2, source);
