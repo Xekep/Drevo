@@ -698,6 +698,7 @@ test("H settings keep an unsaved draft on version conflict and refresh permissio
 });
 
 test("all five reference shaders render their configured effect with exact photo endpoints", async ({ page }) => {
+  test.setTimeout(120000);
   await setup(page);
   let effect: ChronicleEffect = "glass";
   await page.route("**/api/chronicle-settings", route => route.fulfill({ json: { version: 1, canConfigure: false,
@@ -718,14 +719,24 @@ test("all five reference shaders render their configured effect with exact photo
     effect = name as ChronicleEffect;
     const dialog = await openPerson(page);
     await dialog.getByRole("button", { name: "Приостановить хронику" }).click();
+    // Software WebGL can take longer than the entire transition to draw a
+    // frame. Advance the animation clock explicitly so every shader is tested
+    // at intermediate progress rather than depending on the runner's GPU/FPS.
+    const animationTime = new Date("2026-11-11T12:00:00Z");
+    await page.clock.install({ time: animationTime });
+    await page.clock.pauseAt(animationTime);
     await dialog.getByRole("button", { name: "Листать хронику дальше" }).click();
-    await expect(dialog.getByRole("button", { name: "Листать хронику дальше" })).toBeEnabled();
+    await expect.poll(async () => {
+      await page.clock.runFor(100);
+      return dialog.getByRole("button", { name: "Листать хронику дальше" }).isEnabled();
+    }, { timeout: 15000 }).toBe(true);
     await expect(dialog.getByLabel("Номер снимка")).toHaveText("2 / 3");
     const frames = await page.evaluate(() => (window as unknown as { effectFrames: Array<{ effect: number; progress: number }> }).effectFrames);
     expect(frames.some(frame => frame.effect === index && frame.progress === 0), name).toBe(true);
     expect(frames.some(frame => frame.effect === index && frame.progress > 0 && frame.progress < 1), name).toBe(true);
     await expect(dialog.locator(".chronicle-photo")).toHaveAttribute("src", /chronicle-later/);
     await expect(dialog.locator(".chronicle-transition")).toHaveCSS("opacity", "0");
+    await page.clock.resume();
   }
 });
 

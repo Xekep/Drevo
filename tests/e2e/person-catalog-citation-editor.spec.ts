@@ -39,9 +39,7 @@ test("редактор человека показывает каталожны�
     return route.fulfill({ json: { family, revision, appliedChanges: changes } });
   });
 
-  await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
-  await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").click();
+  await page.goto("/people/e2e-child");
   await page.locator(".inspector-person-actions .person-edit-button").click();
   await page.locator(".form-details > summary").filter({ hasText: /^Источники$/ }).click();
   const sources = page.locator(".source-editor");
