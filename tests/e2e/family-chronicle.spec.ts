@@ -189,18 +189,22 @@ test("real Glass shader reveals a new photo and returns to an undistorted image;
     "src",
     /chronicle-later/,
   );
-  await dialog.getByRole("button", { name: "Листать хронику дальше" }).click();
-  if (completedInGlass) {
-    await expect(dialog.locator(".chronicle-transition")).toHaveCSS(
-      "opacity",
-      "1",
-    );
+  const usingGlass = !await fallbackNotice.isVisible();
+  if (usingGlass) {
+    // Arm loss before navigation: on a slow runner the whole transition may
+    // finish before a locator can observe the transient canvas opacity.
     await dialog.locator(".chronicle-transition").evaluate((canvas) => {
-      (canvas as HTMLCanvasElement)
-        .getContext("webgl")!
-        .getExtension("WEBGL_lose_context")!
-        .loseContext();
+      const gl = (canvas as HTMLCanvasElement).getContext("webgl")!;
+      const draw = gl.drawArrays;
+      gl.drawArrays = function (...args) {
+        draw.apply(this, args);
+        gl.drawArrays = draw;
+        gl.getExtension("WEBGL_lose_context")!.loseContext();
+      };
     });
+  }
+  await dialog.getByRole("button", { name: "Листать хронику дальше" }).click();
+  if (usingGlass) {
     await expect(fallbackNotice).toHaveText("Включён облегчённый переход");
   } else {
     await expect(dialog.locator(".chronicle-transition")).toHaveCSS(
@@ -211,6 +215,7 @@ test("real Glass shader reveals a new photo and returns to an undistorted image;
   await expect(
     dialog.getByRole("button", { name: "Листать хронику дальше" }),
   ).toBeEnabled();
+  await expect(dialog.locator(".chronicle-photo")).toHaveAttribute("src", /chronicle-unknown/);
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.viewportSize()!.width < 600 ? page.locator(".tree-family-menu > summary") : page.getByRole("button", { name: "Хроника" })).toBeFocused();
