@@ -592,3 +592,58 @@ for (const recorded of [false, true]) test(`spouse links are listed and removabl
   expect(read().people.find(person => person.id === partner.id)!.spouses).not.toContain("e2e-child");
   expect(read().unions!.some(union => union.id === "remove-together")).toBe(false);
 });
+
+test("старое однострочное описание переносится в специальность; новый источник необязателен", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  await form.locator(".education-editor > summary").click();
+  await form.locator(".education-editor .life-event-editor > summary").click();
+  const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
+  await dialog.getByRole("button", {
+    name: "Перенести старое описание в направление / специальность",
+  }).click();
+  await expect(dialog.getByLabel("Направление / специальность")).toHaveValue("Школа");
+  await dialog.getByLabel("Направление / специальность").fill("Программная инженерия");
+  await dialog.getByLabel("Квалификация / степень").fill("Бакалавр");
+  await dialog.getByLabel("Результат обучения").selectOption("completed");
+  await dialog.locator(".event-extra > summary").click();
+  await dialog.getByRole("button", { name: /Добавить источник \(ссылка или документ/ }).click();
+  const source = dialog.locator(".event-source-editor").last();
+  await source.getByLabel("Источник", { exact: true }).fill("Учебная справка");
+  await source.getByLabel("Ссылка", { exact: true }).fill("https://example.org/study");
+  await finishPersonDetail(page);
+  await savePersonDetails(page);
+  const event = read().people.find((person) => person.id === "e2e-child")!.events!
+    .find((item) => item.id === "school")!;
+  expect(event.educationField).toBe("Программная инженерия");
+  expect(event.educationQualification).toBe("Бакалавр");
+  expect(event.educationStatus).toBe("completed");
+  expect(event.description).toBeUndefined();
+  expect(event.sources).toEqual([
+    { title: "Аттестат", type: "", reference: "5" },
+    expect.objectContaining({ title: "Учебная справка", url: "https://example.org/study" }),
+  ]);
+});
+
+test("для работы и военной службы показываются собственные поля", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  await form.locator(".event-editor > summary").click();
+  await form.getByRole("button", { name: "Добавить событие" }).click();
+  const dialog = page.getByRole("dialog", { name: "Событие жизни", exact: true });
+  await dialog.getByLabel("Событие", { exact: true }).selectOption("work");
+  await dialog.getByLabel("Организация / место работы").fill("Завод");
+  await dialog.getByLabel("Должность / профессия").fill("Инженер");
+  await finishPersonDetail(page);
+  await form.getByRole("button", { name: "Добавить событие" }).click();
+  await dialog.getByLabel("Событие", { exact: true }).selectOption("military");
+  await dialog.getByLabel("Воинская часть / подразделение").fill("544-й стрелковый полк");
+  await dialog.getByLabel("Воинское звание").fill("Красноармеец");
+  await finishPersonDetail(page);
+  await savePersonDetails(page);
+  const events = read().people.find((person) => person.id === "e2e-child")!.events!;
+  expect(events).toContainEqual(expect.objectContaining({ type: "work",
+    organization: "Завод", position: "Инженер" }));
+  expect(events).toContainEqual(expect.objectContaining({ type: "military",
+    militaryUnit: "544-й стрелковый полк", militaryRank: "Красноармеец" }));
+});
