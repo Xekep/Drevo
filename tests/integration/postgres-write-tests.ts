@@ -19,3 +19,4 @@ import "./postgres-personal-research.ts";
 import "./postgres-email-auth.ts";
 import "./postgres-multiple-archives.ts";
 import "./postgres-discovery-route-index.ts";
+import "./postgres-chronicle-settings.ts";

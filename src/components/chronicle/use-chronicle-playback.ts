@@ -6,6 +6,7 @@ export function useChroniclePlayback(
   playing: boolean,
   paused: boolean,
   next: () => void,
+  duration = 5000,
 ) {
   const elapsed = useRef({ slideId, ms: 0 });
   const [sample, setSample] = useState({ slideId, ms: 0 });
@@ -16,12 +17,12 @@ export function useChroniclePlayback(
     const start = performance.now(),
       previous = elapsed.current.ms;
     const currentTime = () =>
-      Math.min(5000, previous + performance.now() - start);
+      Math.min(duration, previous + performance.now() - start);
     const timer = setInterval(() => {
       const ms = currentTime();
       elapsed.current.ms = ms;
       setSample({ slideId, ms });
-      if (ms >= 5000) {
+      if (ms >= duration) {
         clearInterval(timer);
         next();
       }
@@ -30,6 +31,6 @@ export function useChroniclePlayback(
       elapsed.current.ms = currentTime();
       clearInterval(timer);
     };
-  }, [slideId, playing, paused, next]);
-  return sample.slideId === slideId ? sample.ms / 50 : 0;
+  }, [slideId, playing, paused, next, duration]);
+  return sample.slideId === slideId ? Math.min(100, sample.ms / duration * 100) : 0;
 }

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { ChevronUp, Pause, Play } from "lucide-react";
 import { fullName, years, type ArchivePhoto, type Person } from "../../domain";
 import { chroniclePhotos } from "../../domain/family-chronicle";
-import { photoCaption } from "../../domain/photo-metadata";
 import type {
   GalleryPage,
   GalleryQuery,
@@ -12,14 +11,20 @@ import { ChronicleStage } from "./chronicle-stage";
 import { ChronicleLoading } from "./chronicle-loading";
 import { ChroniclePhotoNavigation } from "./chronicle-photo-navigation";
 import { useChroniclePlayback } from "./use-chronicle-playback";
+import type { ChronicleConfiguration } from "../../shared/chronicle-settings.ts";
+import { readChronicleConfiguration } from "./chronicle-configuration";
+import { useChronicleSettings } from "./chronicle-settings-panel";
+import { useChroniclePreload } from "./use-chronicle-preload";
 
 function ChroniclePlayer({
   photos,
+  configuration,
   person,
   controlsHost,
   onPerson,
 }: {
   photos: ArchivePhoto[];
+  configuration: ChronicleConfiguration;
   person: Person;
   controlsHost: HTMLElement | null;
   onPerson: (id: string) => void;
@@ -40,10 +45,11 @@ function ChroniclePlayer({
       if (busy || target === index || target < 0 || target >= photos.length)
         return;
       setBusy(true);
+      if (detailsOpen) setPlaying(true);
       setDetailsOpen(false);
       setIndex(target);
     },
-    [busy, index, photos.length],
+    [busy, index, photos.length, detailsOpen],
   );
   const next = useCallback(
     () => navigate((index + 1) % photos.length),
@@ -53,11 +59,15 @@ function ChroniclePlayer({
     () => navigate((index - 1 + photos.length) % photos.length),
     [navigate, index, photos.length],
   );
+  const pause = useCallback(() => setPlaying(false), []);
+  const settings = useChronicleSettings(configuration, pause, next);
+  const takePreloaded = useChroniclePreload(photos, index, !busy);
   const progress = useChroniclePlayback(
     photos[index].id,
     playing && photos.length > 1,
-    busy || !visible,
+    busy || !visible || settings.open || detailsOpen,
     next,
+    settings.settings.autoSlideSpeed,
   );
   useEffect(() => {
     const preference = matchMedia("(prefers-reduced-motion: reduce)");
@@ -101,6 +111,9 @@ function ChroniclePlayer({
     <div className="chronicle-player">
       <ChronicleStage
         photo={photos[index]}
+        settings={settings.settings}
+        busy={busy}
+        takePreloaded={takePreloaded}
         reduced={reduced || !visible}
         onBusy={setBusy}
         onShown={setShownId}
@@ -118,24 +131,7 @@ function ChroniclePlayer({
       <span className="chronicle-sr-only" aria-label="Номер снимка">
         {active + 1} / {photos.length}
       </span>
-      <div className="chronicle-controls">
-        <button
-          type="button"
-          aria-label="Предыдущий снимок"
-          disabled={busy || photos.length < 2}
-          onClick={previous}
-        >
-          ←
-        </button>
-        <button
-          type="button"
-          aria-label="Следующий снимок"
-          disabled={busy || photos.length < 2}
-          onClick={next}
-        >
-          →
-        </button>
-      </div>
+      {settings.panel}
       {controlsHost && createPortal(
         <button type="button" className="chronicle-playback-toggle"
           aria-label={playing ? "Приостановить хронику" : "Продолжить хронику"}
@@ -157,10 +153,10 @@ function ChroniclePlayer({
           <strong>{fullName(person)}</strong>
           <span>{years(person)}</span>
         </button>
-        <p className="chronicle-date">
-          {!shown.takenAt && !shown.year && "Дата не указана · "}
-          {photoCaption(shown) || "Семейная фотография"}
-        </p>
+        {shown.event && <p className="chronicle-event">{shown.event}</p>}
+        {shown.takenAt && shown.takenAt !== shown.year && !/^\d{4}$/.test(shown.takenAt) && (
+          <p className="chronicle-taken-at">Дата съёмки: {shown.takenAt}</p>
+        )}
         {shown.description && (
           <p className="chronicle-description">{shown.description}</p>
         )}
@@ -173,7 +169,7 @@ function ChroniclePlayer({
         </div>
         <button type="button" className="chronicle-caption-summary" aria-expanded={detailsOpen}
           aria-controls={detailsId} disabled={busy} onClick={() => {
-            setPlaying(false);
+            setPlaying(detailsOpen);
             setDetailsOpen(value => !value);
           }}>
           <span>{[shown.year || shown.takenAt?.match(/\d{4}/)?.[0] || "Дата не указана", shown.place?.trim()].filter(Boolean).join(" · ")}</span>
@@ -203,12 +199,16 @@ export default function FamilyChronicle({
   onPerson: (id: string) => void;
 }) {
   const [photos, setPhotos] = useState<ArchivePhoto[] | null>(null);
+  const [configuration, setConfiguration] = useState<ChronicleConfiguration | null>(null);
   const [loaded, setLoaded] = useState(0),
     [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
+      const configuration = await readChronicleConfiguration(controller.signal);
+      if (cancelled) return;
       const all: ArchivePhoto[] = [],
         seen = new Set<string>();
       let offset = 0;
@@ -233,7 +233,10 @@ export default function FamilyChronicle({
         setLoaded(offset);
         if (offset >= page.total) break;
       } while (!cancelled);
-      if (!cancelled) setPhotos(chroniclePhotos(all, [person.id]));
+      if (!cancelled) {
+        setConfiguration(configuration);
+        setPhotos(chroniclePhotos(all, [person.id]));
+      }
     })().catch((reason) => {
       if (!cancelled)
         setError(
@@ -244,6 +247,7 @@ export default function FamilyChronicle({
     });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [person.id, loadGallery, attempt]);
   if (error)
@@ -263,7 +267,7 @@ export default function FamilyChronicle({
         </button>
       </div>
     );
-  if (photos === null)
+  if (photos === null || configuration === null)
     return (
       <ChronicleLoading
         label={`Собираем хронику…${loaded ? ` ${loaded} фото` : ""}`}
@@ -277,6 +281,6 @@ export default function FamilyChronicle({
       </div>
     );
   return (
-    <ChroniclePlayer photos={photos} person={person} controlsHost={controlsHost} onPerson={onPerson} />
+    <ChroniclePlayer photos={photos} configuration={configuration} person={person} controlsHost={controlsHost} onPerson={onPerson} />
   );
 }

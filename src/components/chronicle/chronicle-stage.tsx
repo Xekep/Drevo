@@ -4,9 +4,13 @@ import { photoLabel } from "../../domain/photo-metadata";
 import type { ArchivePhoto } from "../../domain/types";
 import { createLiquidGlassRenderer } from "./liquid-glass-renderer";
 import { ChronicleLoading } from "./chronicle-loading";
+import type { ChronicleSettings } from "../../shared/chronicle-settings.ts";
 
 export function ChronicleStage({
   photo,
+  settings,
+  busy,
+  takePreloaded,
   reduced,
   onBusy,
   onShown,
@@ -16,6 +20,9 @@ export function ChronicleStage({
   onNext,
 }: {
   photo: ArchivePhoto;
+  settings: ChronicleSettings;
+  busy: boolean;
+  takePreloaded: (url: string) => HTMLImageElement | undefined;
   reduced: boolean;
   onBusy: (value: boolean) => void;
   onShown: (id: string) => void;
@@ -38,6 +45,9 @@ export function ChronicleStage({
   const [attempt, setAttempt] = useState(0);
   const requestKey = JSON.stringify([photo.id, photo.url, attempt]);
   const [media, setMedia] = useState({ key: "", state: "loading" });
+  const settingsRef = useRef(settings);
+  // Settings affect the next transition, not the lifetime of the displayed photo.
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
   const status = media.key === requestKey ? media.state : "loading";
   useEffect(
     () => () => {
@@ -47,19 +57,24 @@ export function ChronicleStage({
     [],
   );
   useEffect(() => {
+    const transitionSettings = settingsRef.current;
     let cancelled = false,
       frame = 0,
       started = 0,
       previousFrame = 0,
       slowFrames = 0,
-      sampled = 0;
-    let target: HTMLImageElement | null = new Image();
+      sampled = 0,
+      announced = false;
+    const resource = mediaPreview(photo.url, "display") || "";
+    const preloaded = takePreloaded(resource);
+    let target: HTMLImageElement | null = preloaded || new Image();
     const targetImage = target;
     const surface = canvas.current!,
       settled = image.current!,
       overlay = incoming.current!;
     onBusy(true);
-    const indicator = window.setTimeout(() => setLoadingKey(requestKey), 250);
+    const indicator = window.setTimeout(() => setLoadingKey(requestKey),
+      preloaded?.complete && preloaded.naturalWidth ? 250 : 0);
     const timeout = window.setTimeout(fail, 20_000);
     function fail() {
       if (cancelled) return;
@@ -87,10 +102,13 @@ export function ChronicleStage({
           setHasShown(true);
           surface.style.opacity = "0";
           overlay.style.opacity = "0";
-          onShown(photo.id);
+          announce();
           onBusy(false);
         });
       }).catch(fail);
+    }
+    function announce() {
+      if (!announced) { announced = true; onShown(photo.id); }
     }
     function degrade() {
       fallback.current = true;
@@ -107,6 +125,7 @@ export function ChronicleStage({
       cancelAnimationFrame(frame);
       if (target?.complete && target.naturalWidth) {
         overlay.style.opacity = "1";
+        announce();
         finish();
       }
     }
@@ -128,13 +147,14 @@ export function ChronicleStage({
       setMedia({ key: requestKey, state: "ready" });
       if (!current.current || reduced || current.current.id === photo.id) {
         overlay.style.opacity = "1";
+        announce();
         finish();
         return;
       }
       if (!fallback.current) {
         try {
           renderer.current ??= createLiquidGlassRenderer(surface);
-          renderer.current.prepare(current.current.image, target);
+          renderer.current.prepare(current.current.image, target, transitionSettings);
           renderer.current.render(0);
           surface.style.opacity = "1";
           glass = true;
@@ -144,7 +164,7 @@ export function ChronicleStage({
           degrade();
         }
       }
-      const duration = glass ? 2500 : 450;
+      const duration = glass ? transitionSettings.transitionDuration * 1000 : 450;
       const tick = (now: number) => {
         if (cancelled) return;
         if (!started) started = now;
@@ -159,15 +179,18 @@ export function ChronicleStage({
         try {
           if (glass) renderer.current!.render(eased);
           else overlay.style.opacity = String(eased);
+          if (t > 0) announce();
         } catch {
           degrade();
           overlay.style.opacity = "1";
+          announce();
           finish();
           return;
         }
         if (glass && sampled >= 12 && slowFrames >= 8) {
           degrade();
           overlay.style.opacity = "1";
+          announce();
           finish();
           return;
         }
@@ -180,7 +203,12 @@ export function ChronicleStage({
       frame = requestAnimationFrame(tick);
     };
     target.onerror = fail;
-    target.src = mediaPreview(photo.url, "display") || "";
+    if (!preloaded) target.src = resource;
+    else if (preloaded.complete) queueMicrotask(() => {
+      if (cancelled) return;
+      if (!preloaded.naturalWidth) fail();
+      else targetImage.onload?.call(targetImage, new Event("load"));
+    });
     return () => {
       cancelled = true;
       clearTimeout(timeout);
@@ -204,6 +232,7 @@ export function ChronicleStage({
     onFallback,
     photo,
     requestKey,
+    takePreloaded,
   ]);
   return (
     <div
@@ -239,7 +268,7 @@ export function ChronicleStage({
         aria-hidden="true"
       />
       <canvas ref={canvas} className="chronicle-transition" aria-hidden="true" />
-      <button type="button" className="chronicle-photo-advance" aria-label="Листать хронику дальше" onClick={onNext} />
+      <button type="button" className="chronicle-photo-advance" aria-label="Листать хронику дальше" disabled={busy} onClick={onNext} />
       {status === "loading" && (!hasShown || loadingKey === requestKey) && (
         <ChronicleLoading label="Загружаем фотографию…" />
       )}
