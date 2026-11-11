@@ -166,10 +166,10 @@ test("календарь появляется только для историч
   await form.locator(".education-editor > summary").click();
   await form.locator(".education-editor .life-event-editor > summary").first().click();
   const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
-  const eventDate = dialog.getByLabel("Дата", { exact: true });
-  await expect(dialog.getByRole("checkbox", { name: "Дата по старому стилю", exact: true })).toHaveCount(0);
+  const eventDate = dialog.getByLabel("Начало учёбы", { exact: true });
+  await expect(dialog.getByRole("checkbox", { name: "Начало учёбы по старому стилю", exact: true })).toHaveCount(0);
   await eventDate.fill("1900");
-  await dialog.getByRole("checkbox", { name: "Дата по старому стилю", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: "Начало учёбы по старому стилю", exact: true }).check();
   await eventDate.fill("1.1.1980");
   await dialog.getByLabel("Окончание учёбы", { exact: true }).fill("1985");
   await expect(dialog.getByRole("checkbox", { name: "Окончание учёбы по старому стилю" })).toHaveCount(0);
@@ -249,10 +249,10 @@ test("событие, образование и источник открыва�
   expect(Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2)).toBeLessThan(2);
   expect(bounds.width).toBeLessThanOrEqual(viewport.width - 16);
   await dialog.getByLabel("Учебное заведение").fill("Университет");
-  await dialog.getByLabel("Дата", { exact: true }).fill("1985");
+  await dialog.getByLabel("Начало учёбы", { exact: true }).fill("1985");
   await expect.poll(unloadPrevented).toBe(true);
   await page.screenshot({ path: info.outputPath("education-dialog.png") });
-  await dialog.getByLabel("Дата", { exact: true }).press("Enter");
+  await dialog.getByLabel("Начало учёбы", { exact: true }).press("Enter");
   await expect(dialog).toHaveCount(0);
   await expect.poll(unloadPrevented).toBe(true);
   await expect(form).toBeVisible();
@@ -386,7 +386,7 @@ test("отдельные образование и брак, поиск толь
   await form.locator(".education-editor > summary").click();
   const school = form.locator(".education-editor .life-event-editor");
   await school.locator(":scope > summary").click();
-  await school.getByLabel("Дата", { exact: true }).fill("1982");
+  await school.getByLabel("Начало учёбы", { exact: true }).fill("1982");
   await finishPersonDetail(page);
   await form.locator(".person-marriages-editor > summary").click();
   const marriage = form.locator(".person-marriages-editor");
