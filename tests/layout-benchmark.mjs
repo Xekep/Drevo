@@ -1,4 +1,6 @@
 // Run with: node --experimental-strip-types tests/layout-benchmark.mjs
+// DREVO_LAYOUT_GEDCOM reads a local UTF-8 GEDCOM and measures its whole graph.
+// DREVO_LAYOUT_WHOLE_SEARCH=baseline omits only the new whole-graph trials.
 // Set DREVO_LAYOUT_RANDOM_SCAN=1 to compare 24 deterministic family graphs.
 // DREVO_LAYOUT_FAST=1 omits experimental ELK variants during that scan.
 // DREVO_LAYOUT_EDIT_SCAN=1 measures movement after adding one small family.
@@ -25,6 +27,9 @@ import { performance } from "node:perf_hooks";
 import { unionGeometry } from "../src/domain/union-layout.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "../src/domain/union-order.ts";
 import { routingQuality } from "../src/domain/routing-quality.ts";
+import { familyAxisQuality } from "../src/domain/family-axis.ts";
+import { importGedcom } from "../src/domain/gedcom.ts";
+import { projectTree } from "../src/domain/family-neighborhood.ts";
 import {
   bounds,
   segmentContact,
@@ -55,6 +60,9 @@ const optionOverrides = (() => {
 })();
 const generationMode = process.env.DREVO_LAYOUT_GENERATION_MODE || "production";
 const decrossMode = process.env.DREVO_LAYOUT_DECROSS_MODE || "production";
+const wholeTreeSearch = process.env.DREVO_LAYOUT_WHOLE_SEARCH || "production";
+if (!["production", "baseline"].includes(wholeTreeSearch))
+  throw new Error("DREVO_LAYOUT_WHOLE_SEARCH must be production or baseline");
 if (!["production", "legacy"].includes(decrossMode))
   throw new Error("DREVO_LAYOUT_DECROSS_MODE must be production or legacy");
 if (!["production", "partition", "preset"].includes(generationMode))
@@ -375,13 +383,17 @@ function rankValidity(result, components) {
   return { missingElkNodes, nonFiniteElkPositions, sameRankYViolations, rankOrderViolations };
 }
 
-async function measure(people, selectedSeed, influence, thoroughness, disableCompact = false, interactiveFrom, previousGeometry, size, skipPairFlip = false) {
+async function measure(people, selectedSeed, influence, thoroughness, disableCompact = false, interactiveFrom, previousGeometry, size, skipPairFlip = false, links = []) {
   const engine = new ELK({ algorithms: ["layered"] });
   let elkCalls = 0;
   let elkMs = 0;
   const trace = [];
   const completedSeeds = new Set();
   const layout = async (graph) => {
+    if (wholeTreeSearch === "baseline" && people.length > 300 &&
+      graph.layoutOptions?.["elk.layered.crossingMinimization.greedySwitch.activationThreshold"] === "0" &&
+      graph.layoutOptions?.["elk.layered.thoroughness"] !== "1")
+      throw new Error("skip whole-tree trial for baseline measurement");
     const seed = Number(graph.layoutOptions?.["elk.randomSeed"]);
     if (disableCompact && graph.layoutOptions?.["elk.layered.layering.strategy"] === "MIN_WIDTH")
       throw new Error("skip compact benchmark candidate");
@@ -464,7 +476,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
   const started = performance.now();
   let geometry, layoutCompleted;
   try {
-    geometry = await unionGeometry(people, layout, false, [], size, previousGeometry, decrossMode !== "legacy");
+    geometry = await unionGeometry(people, layout, false, links, size, previousGeometry, decrossMode !== "legacy");
     layoutCompleted = performance.now();
   } finally {
     // Bundled ELK uses an in-process FakeWorker without a terminate method.
@@ -489,6 +501,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
     totalMs: Math.round(qualityCompleted - started),
     generationMode,
     decrossMode,
+    wholeTreeSearch,
     geometrySha256: createHash("sha256").update(JSON.stringify(geometry)).digest("hex"),
   };
   Object.defineProperty(result, "geometry", { value: geometry });
@@ -587,7 +600,16 @@ function orderMotion(before, after) {
   };
 }
 
-if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
+if (process.env.DREVO_LAYOUT_GEDCOM) {
+  const imported = importGedcom(await readFile(process.env.DREVO_LAYOUT_GEDCOM, "utf8"), "layout-benchmark");
+  const input = projectTree(imported.family, new Set(imported.family.people.map(person => person.id)));
+  const result = await measure(input.people, undefined, undefined, undefined,
+    false, undefined, undefined, treeNodeSize(), false, input.links);
+  // No names, citations, dates, paths or imported media are written to stdout.
+  console.log(JSON.stringify({ kind: "gedcom", people: input.people.length,
+    links: input.links.length, importWarnings: imported.warnings.length,
+    ...result, familyAxes: familyAxisQuality(result.geometry, treeNodeSize()) }));
+} else if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
   const limit = Number(process.env.DREVO_LAYOUT_LIMIT || 24);
   for (let seed = 1; seed <= limit; seed++) {
     const people = randomFamily(seed, process.env.DREVO_LAYOUT_LARGE ? 4 : 2);
@@ -667,7 +689,9 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       qualityMs: result.qualityMs,
       generationMode: result.generationMode,
       decrossMode: result.decrossMode,
+      wholeTreeSearch: result.wholeTreeSearch,
       geometrySha256: result.geometrySha256,
+      familyAxes: familyAxisQuality(geometry, treeNodeSize()),
       ...(process.env.DREVO_LAYOUT_TRACE ? { trace: result.trace } : {}),
     }));
   }

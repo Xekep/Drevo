@@ -72,7 +72,7 @@ export type UnionBlock = {
   height: number;
 };
 type Unit = UnionGroup;
-type LargeDecrossProfile = "greedy" | "sweep";
+type LargeDecrossProfile = "greedy" | "sweep" | "thorough";
 const unionId = (ids: string[]) => `union:${JSON.stringify([...ids].sort())}`;
 
 /** Один союз — одна точная пара. Общий супруг не объединяет разные союзы. */
@@ -383,9 +383,10 @@ async function geometryForSeed(
       ...(profile
         ? {
             "elk.layered.considerModelOrder.strategy": "NONE",
-            "elk.layered.thoroughness": profile === "greedy" ? "1" : "12",
+            "elk.layered.thoroughness": profile === "greedy" ? "1" :
+              profile === "thorough" && people.length > 4000 ? "4" : "12",
             "elk.layered.crossingMinimization.greedySwitch.activationThreshold":
-              profile === "greedy" ? "0" : "40",
+              profile === "sweep" ? "40" : "0",
             "elk.layered.crossingMinimization.greedySwitch.type": "TWO_SIDED",
           }
         : {}),
@@ -1248,6 +1249,8 @@ export async function unionGeometry(
     result = optimizeFinalFamilyBranches(result, people, links, size, finalScore);
     result = refineFinalCoupleOrder(result, people, links, size, finalScore);
     result = shortenFamilyRows(result, people, links, size, finalScore);
+    // Final moves can reroute one child away from its siblings. Share corridors
+    // after every placement pass, while preserving the accepted card positions.
     return bundleFamilyBranches(result);
   };
   best = finish(best);
@@ -1286,7 +1289,26 @@ export async function unionGeometry(
       }
     }
   }
-  // Final moves can reroute one child away from its siblings. Share corridors
-  // after every placement pass, while preserving the accepted card positions.
+  if (largeDecross && people.length > 300 && geometryQuality(best).crossings) {
+    // Keep the complete accepted scene while trying two global seed orders
+    // with thorough sweeps and greedy switches. Budget the search, never people.
+    for (const seed of new Set([bestSeed, 8])) {
+      try {
+        const placed = await geometryForSeed(people, layout, reverse, links, seed, size,
+          false, undefined, undefined, "thorough");
+        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
+        const candidateExtent = extent(candidate), baselineExtent = extent(baseline);
+        if (Math.max(candidateExtent.width, candidateExtent.height) <=
+          Math.max(baselineExtent.width, baselineExtent.height) * 1.4 &&
+          candidateExtent.width * candidateExtent.height <=
+          baselineExtent.width * baselineExtent.height * 1.5 &&
+          preferColdFamilyLayout(candidate, best, size, finalScore) &&
+          preferColdFamilyLayout(candidate, baseline, size, finalScore)) best = candidate;
+      } catch {
+        // The complete baseline remains usable when an extra solver fails.
+      }
+      if (!geometryQuality(best).crossings) break;
+    }
+  }
   return best;
 }
