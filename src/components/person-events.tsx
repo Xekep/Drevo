@@ -105,7 +105,9 @@ export function EventsEditor({
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
       sources: editing.sources?.filter((source) => source.catalogId || source.title.trim() ||
-        source.reference.trim() || source.url?.trim() || source.documentId),
+        source.type.trim() || source.reference.trim() || source.url?.trim() ||
+        source.note?.trim() || source.documentId ||
+        (source.repository && Object.values(source.repository).some((value) => value.trim()))),
     };
     validateEvents([normalized]);
     validateEventEvidence(normalized);
