@@ -117,10 +117,10 @@ test("византийская эра начала и конца образов�
   await form.locator(".education-editor > summary").click();
   await form.getByRole("button", { name: "Добавить образование", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
-  const start = dialog.getByRole("textbox", { name: "Дата", exact: true });
+  const start = dialog.getByRole("textbox", { name: "Начало учёбы", exact: true });
   const end = dialog.getByRole("textbox", { name: "Окончание учёбы", exact: true });
   await start.fill("12.12.7159");
-  await dialog.getByRole("checkbox", { name: "Дата по византийской эре", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: "Начало учёбы по византийской эре", exact: true }).check();
   await end.fill("01.01.7160");
   await dialog.getByRole("checkbox", { name: "Окончание учёбы по византийской эре", exact: true }).check();
   await finishPersonDetail(page);
@@ -631,12 +631,12 @@ test("для работы и военной службы показываютс�
   await form.locator(".event-editor > summary").click();
   await form.getByRole("button", { name: "Добавить событие" }).click();
   const dialog = page.getByRole("dialog", { name: "Событие жизни", exact: true });
-  await dialog.getByLabel("Событие", { exact: true }).selectOption("work");
+  await dialog.getByRole("combobox", { name: "Событие", exact: true }).selectOption("work");
   await dialog.getByLabel("Организация / место работы").fill("Завод");
   await dialog.getByLabel("Должность / профессия").fill("Инженер");
   await finishPersonDetail(page);
   await form.getByRole("button", { name: "Добавить событие" }).click();
-  await dialog.getByLabel("Событие", { exact: true }).selectOption("military");
+  await dialog.getByRole("combobox", { name: "Событие", exact: true }).selectOption("military");
   await dialog.getByLabel("Воинская часть / подразделение").fill("544-й стрелковый полк");
   await dialog.getByLabel("Воинское звание").fill("Красноармеец");
   await finishPersonDetail(page);
