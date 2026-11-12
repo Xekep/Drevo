@@ -720,6 +720,10 @@ test("all five reference shaders render their configured effect with exact photo
         progress: this.getUniform(program, this.getUniformLocation(program, "uProgress")!) as number });
     };
   });
+  // Install the virtual clock once: reinstalling it on the next photo/effect
+  // keeps its advanced time, so pauseAt() cannot move back to the original date.
+  const animationTime = new Date("2026-11-11T12:00:00Z");
+  await page.clock.install({ time: animationTime });
   for (const [index, name] of Object.keys(chronicleEffects).entries()) {
     effect = name as ChronicleEffect;
     const dialog = await openPerson(page);
@@ -727,18 +731,20 @@ test("all five reference shaders render their configured effect with exact photo
     // Software WebGL can take longer than the entire transition to draw a
     // frame. Advance the animation clock explicitly so every shader is tested
     // at intermediate progress rather than depending on the runner's GPU/FPS.
-    const animationTime = new Date("2026-11-11T12:00:00Z");
-    await page.clock.install({ time: animationTime });
-    await page.clock.pauseAt(animationTime);
+    // Each effect gets a strictly later clock instant, even after navigation.
+    await page.clock.pauseAt(new Date(animationTime.getTime() + (index + 1) * 60_000));
     await dialog.getByRole("button", { name: "Листать хронику дальше" }).click();
-    await expect.poll(async () => {
-      await page.clock.runFor(100);
-      return dialog.getByRole("button", { name: "Листать хронику дальше" }).isEnabled();
-    }, { timeout: 15000 }).toBe(true);
-    await expect(dialog.getByLabel("Номер снимка")).toHaveText("2 / 3");
+    await expect(dialog.locator(".chronicle-transition")).toHaveCSS("opacity", "1");
+    // Sample intermediate GPU frames, then skip the remaining delay: software
+    // WebGL can be too slow to render every frame before a wall-clock timeout.
+    await page.clock.runFor(100);
     const frames = await page.evaluate(() => (window as unknown as { effectFrames: Array<{ effect: number; progress: number }> }).effectFrames);
     expect(frames.some(frame => frame.effect === index && frame.progress === 0), name).toBe(true);
     expect(frames.some(frame => frame.effect === index && frame.progress > 0 && frame.progress < 1), name).toBe(true);
+    await page.clock.fastForward(650);
+    await page.clock.runFor(50);
+    await expect(dialog.getByRole("button", { name: "Листать хронику дальше" })).toBeEnabled({ timeout: 20000 });
+    await expect(dialog.getByLabel("Номер снимка")).toHaveText("2 / 3");
     await expect(dialog.locator(".chronicle-photo")).toHaveAttribute("src", /chronicle-later/);
     await expect(dialog.locator(".chronicle-transition")).toHaveCSS("opacity", "0");
     await page.clock.resume();
