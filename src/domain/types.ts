@@ -65,6 +65,16 @@ export type PersonEvent = {
   alternatives?: EventFactAlternative[];
   location?: PlaceLocation;
   description?: string;
+  /** Направление или специальность учёбы, не смешивается с заметками. */
+  educationField?: string;
+  educationQualification?: string;
+  educationStatus?: "completed" | "ongoing" | "unfinished";
+  /** Уточнения к занятиям, военной службе и переезду. */
+  organization?: string;
+  position?: string;
+  militaryUnit?: string;
+  militaryRank?: string;
+  moveFrom?: string;
   sources?: Source[];
 };
 export type ClaimConfidence = "confirmed" | "probable" | "tentative" | "conflicting" | "unknown";

@@ -117,10 +117,10 @@ test("византийская эра начала и конца образов�
   await form.locator(".education-editor > summary").click();
   await form.getByRole("button", { name: "Добавить образование", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
-  const start = dialog.getByRole("textbox", { name: "Дата", exact: true });
+  const start = dialog.getByRole("textbox", { name: "Начало учёбы", exact: true });
   const end = dialog.getByRole("textbox", { name: "Окончание учёбы", exact: true });
   await start.fill("12.12.7159");
-  await dialog.getByRole("checkbox", { name: "Дата по византийской эре", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: "Начало учёбы по византийской эре", exact: true }).check();
   await end.fill("01.01.7160");
   await dialog.getByRole("checkbox", { name: "Окончание учёбы по византийской эре", exact: true }).check();
   await finishPersonDetail(page);
@@ -166,10 +166,10 @@ test("календарь появляется только для историч
   await form.locator(".education-editor > summary").click();
   await form.locator(".education-editor .life-event-editor > summary").first().click();
   const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
-  const eventDate = dialog.getByLabel("Дата", { exact: true });
-  await expect(dialog.getByRole("checkbox", { name: "Дата по старому стилю", exact: true })).toHaveCount(0);
+  const eventDate = dialog.getByLabel("Начало учёбы", { exact: true });
+  await expect(dialog.getByRole("checkbox", { name: "Начало учёбы по старому стилю", exact: true })).toHaveCount(0);
   await eventDate.fill("1900");
-  await dialog.getByRole("checkbox", { name: "Дата по старому стилю", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: "Начало учёбы по старому стилю", exact: true }).check();
   await eventDate.fill("1.1.1980");
   await dialog.getByLabel("Окончание учёбы", { exact: true }).fill("1985");
   await expect(dialog.getByRole("checkbox", { name: "Окончание учёбы по старому стилю" })).toHaveCount(0);
@@ -249,10 +249,10 @@ test("событие, образование и источник открыва�
   expect(Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2)).toBeLessThan(2);
   expect(bounds.width).toBeLessThanOrEqual(viewport.width - 16);
   await dialog.getByLabel("Учебное заведение").fill("Университет");
-  await dialog.getByLabel("Дата", { exact: true }).fill("1985");
+  await dialog.getByLabel("Начало учёбы", { exact: true }).fill("1985");
   await expect.poll(unloadPrevented).toBe(true);
   await page.screenshot({ path: info.outputPath("education-dialog.png") });
-  await dialog.getByLabel("Дата", { exact: true }).press("Enter");
+  await dialog.getByLabel("Начало учёбы", { exact: true }).press("Enter");
   await expect(dialog).toHaveCount(0);
   await expect.poll(unloadPrevented).toBe(true);
   await expect(form).toBeVisible();
@@ -386,7 +386,7 @@ test("отдельные образование и брак, поиск толь
   await form.locator(".education-editor > summary").click();
   const school = form.locator(".education-editor .life-event-editor");
   await school.locator(":scope > summary").click();
-  await school.getByLabel("Дата", { exact: true }).fill("1982");
+  await school.getByLabel("Начало учёбы", { exact: true }).fill("1982");
   await finishPersonDetail(page);
   await form.locator(".person-marriages-editor > summary").click();
   const marriage = form.locator(".person-marriages-editor");
@@ -591,4 +591,59 @@ for (const recorded of [false, true]) test(`spouse links are listed and removabl
   expect(read().people.find(person => person.id === "e2e-child")!.spouses).not.toContain(partner.id);
   expect(read().people.find(person => person.id === partner.id)!.spouses).not.toContain("e2e-child");
   expect(read().unions!.some(union => union.id === "remove-together")).toBe(false);
+});
+
+test("старое однострочное описание переносится в специальность; новый источник необязателен", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  await form.locator(".education-editor > summary").click();
+  await form.locator(".education-editor .life-event-editor > summary").click();
+  const dialog = page.getByRole("dialog", { name: "Образование", exact: true });
+  await dialog.getByRole("button", {
+    name: "Перенести старое описание в направление / специальность",
+  }).click();
+  await expect(dialog.getByLabel("Направление / специальность")).toHaveValue("Школа");
+  await dialog.getByLabel("Направление / специальность").fill("Программная инженерия");
+  await dialog.getByLabel("Квалификация / степень").fill("Бакалавр");
+  await dialog.getByLabel("Результат обучения").selectOption("completed");
+  await dialog.locator(".event-extra > summary").click();
+  await dialog.getByRole("button", { name: /Добавить источник \(ссылка или документ/ }).click();
+  const source = dialog.locator(".event-source-editor").last();
+  await source.getByLabel("Источник", { exact: true }).fill("Учебная справка");
+  await source.getByLabel("Ссылка", { exact: true }).fill("https://example.org/study");
+  await finishPersonDetail(page);
+  await savePersonDetails(page);
+  const event = read().people.find((person) => person.id === "e2e-child")!.events!
+    .find((item) => item.id === "school")!;
+  expect(event.educationField).toBe("Программная инженерия");
+  expect(event.educationQualification).toBe("Бакалавр");
+  expect(event.educationStatus).toBe("completed");
+  expect(event.description).toBeUndefined();
+  expect(event.sources).toEqual([
+    { title: "Аттестат", type: "", reference: "5" },
+    expect.objectContaining({ title: "Учебная справка", url: "https://example.org/study" }),
+  ]);
+});
+
+test("для работы и военной службы показываются собственные поля", async ({ page }) => {
+  const read = await editor(page);
+  const form = page.locator(".person-editor-form");
+  await form.locator(".event-editor > summary").click();
+  await form.getByRole("button", { name: "Добавить событие" }).click();
+  const dialog = page.getByRole("dialog", { name: "Событие жизни", exact: true });
+  await dialog.getByRole("combobox", { name: "Событие", exact: true }).selectOption("work");
+  await dialog.getByLabel("Организация / место работы").fill("Завод");
+  await dialog.getByLabel("Должность / профессия").fill("Инженер");
+  await finishPersonDetail(page);
+  await form.getByRole("button", { name: "Добавить событие" }).click();
+  await dialog.getByRole("combobox", { name: "Событие", exact: true }).selectOption("military");
+  await dialog.getByLabel("Воинская часть / подразделение").fill("544-й стрелковый полк");
+  await dialog.getByLabel("Воинское звание").fill("Красноармеец");
+  await finishPersonDetail(page);
+  await savePersonDetails(page);
+  const events = read().people.find((person) => person.id === "e2e-child")!.events!;
+  expect(events).toContainEqual(expect.objectContaining({ type: "work",
+    organization: "Завод", position: "Инженер" }));
+  expect(events).toContainEqual(expect.objectContaining({ type: "military",
+    militaryUnit: "544-й стрелковый полк", militaryRank: "Красноармеец" }));
 });

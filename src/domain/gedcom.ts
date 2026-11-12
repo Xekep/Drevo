@@ -781,6 +781,34 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       if (!generalSources.some((existing) => sameCitation(existing, source)))
         generalSources.push(source);
     const ageText = eventAgeText(n);
+    // Preserve typed event fields even when the person-level Drevo extension
+    // was removed by a third-party GEDCOM processor.
+    const details: Partial<PersonEvent> = {};
+    let restoredType: PersonEvent["type"] = eventTags[n.tag] || "other";
+    const detailsText = value(n, "_DREVO_EVENT_DETAILS");
+    if (detailsText) {
+      try {
+        const raw = JSON.parse(detailsText) as Record<string, unknown>;
+        if (!raw || typeof raw !== "object" || Array.isArray(raw))
+          throw new Error("invalid detail object");
+        if (n.tag === "EVEN" && ["education", "work", "military", "move"].includes(String(raw.type)))
+          restoredType = raw.type as PersonEvent["type"];
+        const supported = restoredType === "education"
+          ? ["educationField", "educationQualification", "educationStatus"]
+          : restoredType === "work" ? ["organization", "position"]
+          : restoredType === "military" ? ["militaryUnit", "militaryRank"]
+          : restoredType === "move" ? ["moveFrom"] : [];
+        for (const key of supported) {
+          const data = raw[key];
+          if (typeof data !== "string" || data.length > 1000) continue;
+          if (key === "educationStatus" && !["completed", "ongoing", "unfinished"].includes(data))
+            continue;
+          (details as Record<string, unknown>)[key] = data;
+        }
+      } catch {
+        warnings.add("Дополнительные поля события Drevo повреждены и не перенесены.");
+      }
+    }
     if (ageText.length)
       warnings.add("Возраст AGE сохранён текстом в описании события; отдельная структура возраста не перенесена.");
     return {
@@ -791,7 +819,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       ...(value(n, "_DREVO_END_DATE_JULIAN") && validCalendarPair(start && end ? end : undefined, value(n, "_DREVO_END_DATE_JULIAN"))
         ? { endDateJulian: value(n, "_DREVO_END_DATE_JULIAN") } : {}),
       gedcomTag: n.tag,
-      type: eventTags[n.tag] || "other",
+      type: restoredType,
       title:
         value(n, "TYPE") ||
         (n.value && n.value !== "Y" ? n.value : fallback) ||
@@ -815,6 +843,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       description: [notes(n), ...ageText, ...eventTimeText(n),
         placeFormText(n, `${n.tag}.PLAC`)]
         .filter(Boolean).join("\n") || undefined,
+      ...details,
       sources: generalSources,
     };
   }
@@ -2080,6 +2109,7 @@ export function exportGedcom(
       ...CLAIM_CONFIDENCE_TAGS,
       "_DREVO_UNION_STAGE",
       "_DREVO_EVENT_ID",
+      "_DREVO_EVENT_DETAILS",
       "_TYPE",
       "_URL",
       "_PRIM",
@@ -2275,6 +2305,14 @@ export function exportGedcom(
       if (e.dateJulian) emit(2, "_DREVO_DATE_JULIAN", e.dateJulian);
       if (e.endDateJulian) emit(2, "_DREVO_END_DATE_JULIAN", e.endDateJulian);
       if (e.description) emit(2, "NOTE", e.description);
+      const fields = Object.fromEntries(
+        (["educationField", "educationQualification", "educationStatus",
+          "organization", "position", "militaryUnit", "militaryRank", "moveFrom"] as const)
+          .filter((key) => e[key] !== undefined)
+          .map((key) => [key, e[key]]),
+      );
+      if (Object.keys(fields).length)
+        emit(2, "_DREVO_EVENT_DETAILS", JSON.stringify({ type: e.type, ...fields }));
       for (const index of eventObjects.get(JSON.stringify([p.id, e.id])) || [])
         emit(2, "OBJE", `@M${index}@`, true);
       for (const source of e.sources || []) citation(2, source);
