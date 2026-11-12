@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   chronicleEffects,
   chronicleFields,
@@ -54,6 +54,8 @@ export function useChronicleSettings(
   });
   const [open, setOpen] = useState(false),
     [saving, setSaving] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const bodyId = useId();
   const [error, setError] = useState(""),
     [saved, setSaved] = useState(false);
   const opener = useRef<HTMLElement | null>(null),
@@ -110,7 +112,7 @@ export function useChronicleSettings(
           setDraft({ ...value.settings });
           setError("");
           setSaved(false);
-          if (value.canConfigure) setOpen(true);
+          if (value.canConfigure) { setCollapsed(false); setOpen(true); }
         })
         .catch((reason) => {
           if (!request.signal.aborted)
@@ -207,7 +209,7 @@ export function useChronicleSettings(
     const spec = chronicleFields[key];
     return (
       <label key={key}>
-        {spec.label}
+        <span className="chronicle-setting-label" title={spec.label}>{spec.label}</span>
         <span>
           <input
             type="range"
@@ -241,15 +243,23 @@ export function useChronicleSettings(
           aria-label="Настройки хроники"
         >
           <header>
-            <strong>Настройки хроники</strong>
-            <button type="button" disabled={saving} onClick={close}>
-              Закрыть настройки
+            <button className="chronicle-settings-fold" type="button" disabled={saving}
+              aria-label={collapsed ? "Развернуть настройки хроники" : "Свернуть настройки хроники"}
+              aria-expanded={!collapsed} aria-controls={bodyId}
+              onClick={() => setCollapsed(value => !value)}>
+              <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
+              <strong>Настройки хроники</strong>
+            </button>
+            <button className="chronicle-settings-close" type="button" disabled={saving} onClick={close}
+              aria-label="Закрыть настройки" title="Закрыть настройки">
+              <span aria-hidden="true">×</span>
             </button>
           </header>
+          <div id={bodyId} className="chronicle-settings-body" hidden={collapsed}>
           <p>Общие для всех пользователей и древ. H — открыть или закрыть.</p>
           <fieldset disabled={saving}>
             <label>
-              Переход
+              <span className="chronicle-setting-label">Переход</span>
               <select
                 aria-label="Переход"
                 value={draft.currentEffect}
@@ -265,7 +275,7 @@ export function useChronicleSettings(
               </select>
             </label>
             <label>
-              Пресет
+              <span className="chronicle-setting-label">Пресет</span>
               <select
                 aria-label="Пресет"
                 value={draft.currentEffectPreset}
@@ -356,6 +366,7 @@ export function useChronicleSettings(
               </button>
             </p>
           )}
+          </div>
         </aside>
       ) : error && configuration.canConfigure ? (
         <p className="chronicle-settings-error" role="alert">

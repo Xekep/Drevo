@@ -263,24 +263,27 @@ test("WebGL context loss during a Glass transition falls back without hiding the
   ).toBeEnabled();
 });
 
-test("failed photo load is explicit, retry works and playback pauses", async ({
+test("failed photo load is explicit after automatic retries, manual retry works and playback pauses", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await setup(page);
   let fail = true;
-  await page.route("**/media/chronicle-early.png?variant=display", (route) =>
-    fail
+  let requests = 0;
+  await page.route("**/media/chronicle-early.png?variant=display", (route) => {
+    requests++;
+    return fail
       ? route.fulfill({ status: 503, body: "temporary" })
       : route.fulfill({
           contentType: "image/svg+xml",
           body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"/>',
-        }),
-  );
+        });
+  });
   const dialog = await openPerson(page);
   await expect(dialog.getByRole("alert")).toHaveText(
     "Не удалось загрузить фотографию.Повторить",
   );
+  expect(requests).toBe(3);
   fail = false;
   await dialog.getByRole("button", { name: "Повторить", exact: true }).click();
   await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -288,6 +291,54 @@ test("failed photo load is explicit, retry works and playback pauses", async ({
     "naturalWidth",
     600,
   );
+});
+
+test("closing a chronicle cancels its delayed automatic photo retry", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await setup(page);
+  let requests = 0;
+  await page.route("**/media/chronicle-early.png?variant=display", route => {
+    requests++;
+    return route.fulfill({ status: 503, body: "temporary" });
+  });
+  await page.goto('/people/e2e-child');
+  await launchChronicle(page);
+  const dialog = page.getByRole('dialog', { name: 'Семейная хроника', exact: true });
+  await expect.poll(() => requests).toBe(1);
+  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  // Advance beyond the two backoff delays without starting another photo load.
+  await page.waitForTimeout(800);
+  expect(requests).toBe(1);
+});
+
+test("a failed background photo retries automatically without an error flash or losing the current frame", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await setup(page);
+  let requests = 0;
+  await page.route("**/media/chronicle-later.png?variant=display", route => {
+    requests++;
+    return requests <= 2 ? route.fulfill({ status: 503, body: "temporary" }) : route.fulfill({
+      contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"/>',
+    });
+  });
+  const dialog = await openPerson(page);
+  await expect.poll(() => requests).toBe(1);
+  await page.evaluate(() => {
+    const state = { errors: 0 };
+    Object.assign(window, { chronicleRetry: state });
+    new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes)
+        if (node instanceof Element && (node.matches('[role="alert"]') || node.querySelector('[role="alert"]'))) state.errors++;
+    }).observe(document.querySelector('.chronicle-stage')!, { childList: true, subtree: true });
+  });
+  await dialog.getByRole("button", { name: "Листать хронику дальше" }).click();
+  await expect(dialog.locator('.chronicle-photo')).toHaveAttribute('src', /chronicle-early/);
+  await expect(dialog.locator('.chronicle-photo')).toHaveAttribute('src', /chronicle-later/);
+  await expect(dialog.getByRole("button", { name: "Листать хронику дальше" })).toBeEnabled();
+  expect(requests).toBe(3);
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { chronicleRetry: { errors: number } }).chronicleRetry.errors)).toBe(0);
 });
 test("person chronicle reads every page and never includes other people's or untagged photos", async ({
   page,
@@ -640,6 +691,12 @@ test("only administrators can open H settings; saved configuration is reused by 
     await expect(panel).toBeVisible();
     await panel.getByLabel("Переход", { exact: true }).selectOption("ripple");
     await panel.getByLabel("Пресет", { exact: true }).selectOption("Strong");
+    await panel.getByRole("button", { name: "Свернуть настройки хроники" }).click();
+    await expect(panel.getByLabel("Переход", { exact: true })).toBeHidden();
+    expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(32);
+    await page.screenshot({ path: test.info().outputPath("chronicle-settings-collapsed.png") });
+    await panel.getByRole("button", { name: "Развернуть настройки хроники" }).click();
+    await expect(panel.getByLabel("Пресет", { exact: true })).toHaveValue("Strong");
     await panel.getByRole("slider", { name: "Время показа, мс", exact: true }).press("Home");
     await panel.getByRole("slider", { name: "Длительность перехода, с", exact: true }).press("Home");
     await panel.getByRole("button", { name: "Сохранить для всех" }).click();

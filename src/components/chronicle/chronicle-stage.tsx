@@ -43,6 +43,7 @@ export function ChronicleStage({
   const [hasShown, setHasShown] = useState(false);
   const [loadingKey, setLoadingKey] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const retries = useRef({ photo: "", count: 0, startedAt: 0, retrying: false });
   const requestKey = JSON.stringify([photo.id, photo.url, attempt]);
   const [media, setMedia] = useState({ key: "", state: "loading" });
   const settingsRef = useRef(settings);
@@ -58,6 +59,10 @@ export function ChronicleStage({
   );
   useEffect(() => {
     const transitionSettings = settingsRef.current;
+    const retryKey = JSON.stringify([photo.id, photo.url]);
+    if (retries.current.photo !== retryKey || !retries.current.retrying)
+      retries.current = { photo: retryKey, count: 0, startedAt: Date.now(), retrying: false };
+    else retries.current.retrying = false;
     let cancelled = false,
       frame = 0,
       started = 0,
@@ -75,12 +80,26 @@ export function ChronicleStage({
     onBusy(true);
     const indicator = window.setTimeout(() => setLoadingKey(requestKey),
       preloaded?.complete && preloaded.naturalWidth ? 250 : 0);
-    const timeout = window.setTimeout(fail, 20_000);
-    function fail() {
+    let retryTimer = 0;
+    const timeout = window.setTimeout(() => fail(false),
+      Math.max(0, 20_000 - (Date.now() - retries.current.startedAt)));
+    function fail(retryable = true) {
       if (cancelled) return;
       clearTimeout(timeout);
-      clearTimeout(indicator);
       cancelAnimationFrame(frame);
+      if (retryable && !announced && !retryTimer && retries.current.count < 2 &&
+        Date.now() - retries.current.startedAt < 19_000) {
+        const delay = ++retries.current.count * 250;
+        // Keep the last displayed photo and playback busy until a fresh Image
+        // retries the resource. A failed background preload is never user error.
+        retryTimer = window.setTimeout(() => {
+          retries.current.retrying = true;
+          setAttempt(value => value + 1);
+        }, delay);
+        return;
+      }
+      if (retryTimer) return;
+      clearTimeout(indicator);
       setMedia({ key: requestKey, state: "error" });
       surface.style.opacity = "0";
       overlay.style.opacity = "0";
@@ -105,7 +124,7 @@ export function ChronicleStage({
           announce();
           onBusy(false);
         });
-      }).catch(fail);
+      }).catch(() => fail());
     }
     function announce() {
       if (!announced) { announced = true; onShown(photo.id); }
@@ -202,7 +221,7 @@ export function ChronicleStage({
       };
       frame = requestAnimationFrame(tick);
     };
-    target.onerror = fail;
+    target.onerror = () => fail();
     if (!preloaded) target.src = resource;
     else if (preloaded.complete) queueMicrotask(() => {
       if (cancelled) return;
@@ -213,6 +232,7 @@ export function ChronicleStage({
       cancelled = true;
       clearTimeout(timeout);
       clearTimeout(indicator);
+      clearTimeout(retryTimer);
       cancelAnimationFrame(frame);
       surface.removeEventListener("webglcontextlost", lost);
       surface.style.opacity = "0";
@@ -277,7 +297,11 @@ export function ChronicleStage({
           <p>Не удалось загрузить фотографию.</p>
           <button
             type="button"
-            onClick={() => setAttempt((value) => value + 1)}
+            onClick={() => {
+              retries.current.count = 0;
+              retries.current.startedAt = Date.now();
+              setAttempt((value) => value + 1);
+            }}
           >
             Повторить
           </button>

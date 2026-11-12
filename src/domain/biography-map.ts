@@ -4,14 +4,14 @@ export type BiographyMap = FeatureCollection<
   Geometry | null,
   Record<string, unknown>
 > & { name?: string };
-export const BIOGRAPHY_MAP_LIMIT = 100_000;
+export const BIOGRAPHY_MAP_LIMIT = 500_000;
 export const BIOGRAPHY_MAP_POINTS = 2000;
 
 /** Only embedded geographic data is accepted. Files, URLs and plugin commands
  * are never evaluated while displaying a person's biography. */
 export function parseBiographyMap(source: string): BiographyMap {
   if (source.length > BIOGRAPHY_MAP_LIMIT)
-    throw new Error("Карта слишком большая: максимум 100000 символов.");
+    throw new Error("Карта слишком большая: максимум 500000 символов.");
   let raw: unknown;
   try {
     raw = JSON.parse(source);
@@ -128,8 +128,8 @@ export function parseBiographyMap(source: string): BiographyMap {
     raw.type === "FeatureCollection"
       ? raw.features
       : [raw.type === "Feature" ? raw : { type: "Feature", geometry: raw }];
-  if (!Array.isArray(features) || features.length > 500)
-    throw new Error("В карте допускается до 500 объектов.");
+  if (!Array.isArray(features) || features.length > BIOGRAPHY_MAP_POINTS)
+    throw new Error("В карте допускается до 2000 объектов.");
   return {
     type: "FeatureCollection",
     ...(typeof raw.name === "string" ? { name: raw.name.slice(0, 200) } : {}),
