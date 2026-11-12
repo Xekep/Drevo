@@ -533,6 +533,33 @@ async function pasteMap(content: ReturnType<Page["locator"]>, source: string) {
   }, source);
 }
 
+test("620 point GeoJSON paste folds without freezing and saves every original record", async ({ page }, info) => {
+  const imported = { type: "FeatureCollection", name: "Маршрут на 620 точек", features:
+    Array.from({ length: 620 }, (_, i) => ({ type: "Feature", id: `point-${i}`,
+      geometry: { type: "Point", coordinates: [30 + i / 1000, 50 + i / 1000] },
+      properties: { name: `Пункт ${i}`, date: "1942", source: { page: i, description: "Архивное описание" } },
+    })),
+  };
+  const raw = JSON.stringify(imported, null, 2);
+  expect(raw.length).toBeGreaterThan(100_000);
+  const read = await setup(page, "Перед картой"), editor = await edit(page), content = editor.locator('.cm-content');
+  await content.click();
+  await content.press('Control+End');
+  const start = Date.now();
+  await pasteMap(content, raw);
+  await expect(editor.getByRole('button', { name: 'Показать GeoJSON: Маршрут на 620 точек' })).toBeVisible({ timeout: 3000 });
+  const elapsed = Date.now() - start;
+  expect(elapsed).toBeLessThan(3000);
+  await expect(editor.locator('.leaflet-container')).toHaveCount(0);
+  await content.press('End');
+  await content.press('!');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  expect(read()).toBe('Перед картой\n\n```geojson\n' + raw + '\n```\n\n!');
+  await page.locator('.inspector-dock .biography-map-mini').click();
+  await expect(page.getByRole('region', { name: 'Карта из биографии' }).locator('.leaflet-marker-icon')).toHaveCount(620);
+  await info.attach('620-point-paste-timing', { body: JSON.stringify({ characters: raw.length, elapsed }), contentType: 'application/json' });
+});
+
 test("raw GeoJSON paste folds to an icon, source editing preserves metadata and saves a mini-map", async ({
   page,
 }, info) => {

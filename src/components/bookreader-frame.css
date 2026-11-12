@@ -216,14 +216,35 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
 @media (max-width: 600px) {
   .BRtoolbar {
     height: auto;
-    min-height: 44px;
+    min-height: 46px;
     padding: 6px;
   }
-  .BRtoolbarRight { min-width: 0; }
-}
-@media (max-width: 370px) {
-  .BRtoolbarbuttons { flex-wrap: wrap; }
-  .BRtoolbar .BRtoolbarLeft,
-  .BRtoolbar .BRtoolbarRight { flex: 1 0 100%; }
-  .BRtoolbar .BRtoolbarLeft { padding-right: 0; }
+  .BRtoolbar .BRtoolbarbuttons {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .BRtoolbar .BRtoolbarLeft { flex: 1 1 0; padding-right: 0; }
+  .BRtoolbar .BRtoolbarSectionTitle { display: none; }
+  .BRtoolbar .BRtoolbarRight { flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; }
+  .BRtoolbar .BRtoolbarSectionSearch { max-width: none; width: 100%; }
+  .BRtoolbar .BRbooksearch.desktop { width: 100%; }
+  .BookReader .BRtoolbar .BRbooksearch .BRsearchInput {
+    width: 0;
+    min-width: 0;
+    max-width: none;
+    font-size: 16px;
+    text-overflow: ellipsis;
+  }
+  .BRtoolbar .BRsearchSubmit {
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    padding: 0;
+  }
+  .BRtoolbar .BRsearchSubmit img { width: 18px; height: 18px; }
+  .BRtoolbar .drevo-toolbar-action { width: 32px; height: 34px; }
+  .BRtoolbar .BRtoolbarSectionInfo { gap: 2px; }
 }
