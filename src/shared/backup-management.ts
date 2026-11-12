@@ -36,7 +36,7 @@ export type RestorePreview = {
 
 export type BackupJob = {
   id: string;
-  kind: "create" | "preview" | "check";
+  kind: "create" | "preview" | "check" | "download";
   state: "running" | "succeeded" | "failed";
   startedAt: string;
   error?: string;

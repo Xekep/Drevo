@@ -102,6 +102,26 @@ test("public projection retains exact person evidence while hiding documents and
   assert.doesNotThrow(() => validateFamily(projected));
 });
 
+test("public events retain specialized life facts while stripping internal fields and attachment IDs", () => {
+  const original = family(true);
+  const events: NonNullable<Person["events"]> = [
+    { id: "education", type: "education", educationField: "История",
+      educationQualification: "Диплом", educationStatus: "completed" },
+    { id: "work", type: "work", organization: "Архив", position: "Архивист" },
+    { id: "military", type: "military", militaryUnit: "Часть 1", militaryRank: "Рядовой" },
+    { id: "move", type: "move", moveFrom: "Москва", place: "Тула" },
+  ];
+  original.people[0].events = events.map(event => Object.assign({ ...event,
+    sources: [source("Документ", true)] }, { archiveOnly: "private-event" }));
+  const projected = sharedFamily(original, share, "token");
+  assert.deepEqual(JSON.parse(JSON.stringify(projected.people[0].events)), events.map(event => ({ ...event,
+    sources: [{ title: "Документ", type: "архив", reference: "л. 7" }] })));
+  assert.ok(!JSON.stringify(projected).includes("private-event"));
+  assert.ok(!JSON.stringify(projected).includes(documentId));
+  assert.equal(original.people[0].events[0].sources?.[0].documentId, documentId);
+  assert.doesNotThrow(() => validateFamily(projected));
+});
+
 test("public awards and union milestones retain known fields without runtime extras", () => {
   const original = family(true);
   original.people[0].awards = [{ id: "medal", name: "За службу", year: "1945",

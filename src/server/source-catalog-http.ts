@@ -138,7 +138,7 @@ export function sourceCatalogHttp(
       const person = current.family.people.find((item) => item.id === input.personId);
       const event = input.eventId && person?.events?.find((item) => item.id === input.eventId);
       if (!person || (input.eventId && !event)) return json(res, 404, { error: "Факт не найден" });
-      const citations = event ? event.sources || [] : person.sources;
+      const citations = event ? (event.sources ??= []) : person.sources;
       const index = citations.findIndex((item) => item.catalogId === id);
       if (req.method === "POST") {
         const documentId = input.documentId === undefined ? source.documentIds[0] : input.documentId;

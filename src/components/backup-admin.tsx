@@ -362,15 +362,19 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
                 ? "Создаём копию. Можно закрыть этот раздел."
                 : status.job.kind === "preview"
                   ? "Проверяем копию для восстановления…"
-                  : "Проверяем подключение…"
+                  : status.job.kind === "download"
+                    ? "Подготавливаем скачивание копии…"
+                    : "Проверяем подключение…"
               : status.job.state === "failed"
                 ? status.job.error
                 : status.job.warning ||
                   (status.job.kind === "create"
                     ? "Резервная копия создана."
-                    : status.job.kind === "check"
-                      ? "Соединение установлено, запись в каталог доступна."
-                      : "Копия проверена. Для замены данных требуется подтверждение.")}
+                    : status.job.kind === "download"
+                      ? "Скачивание копии подготовлено."
+                      : status.job.kind === "check"
+                        ? "Соединение установлено, запись в каталог доступна."
+                        : "Копия проверена. Для замены данных требуется подтверждение.")}
           </p>
         )}
         {scope === "tree" && <label className="restore-confirm">
