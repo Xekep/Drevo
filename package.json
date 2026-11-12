@@ -108,6 +108,9 @@
   "type": "module",
   "overrides": {
     "jquery-ui": "1.14.2",
-    "katex": "$katex"
+    "katex": "$katex",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
   }
 }

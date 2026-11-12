@@ -175,6 +175,47 @@ test("schedule and lease survive another instance; disabled schedule never creat
   }
 });
 
+test("raw download shares the managed lease across instances and keeps it until cancelled work finishes cleanup", async t => {
+  t.mock.method(console, "error", () => {});
+  const f = await fixture();
+  const connection = new DatabaseSync(f.path);
+  const other = await backupCoordinator(storeDatabase(connection), f.path, { schedule: false });
+  const controller = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const cleaning = Promise.withResolvers<void>();
+  const finishCleanup = Promise.withResolvers<void>();
+  const pending = f.manager.download(actor, controller.signal, async signal => {
+    started.resolve();
+    await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+    cleaning.resolve();
+    await finishCleanup.promise;
+    signal.throwIfAborted();
+  });
+  const cancelled = assert.rejects(pending, { name: "AbortError" });
+  try {
+    await started.promise;
+    await assert.rejects(other.startCreate(actor), BackupBusyError);
+    await assert.rejects(other.download(actor, new AbortController().signal, async () => 0), BackupBusyError);
+    controller.abort();
+    await cleaning.promise;
+    await assert.rejects(other.startCreate(actor), BackupBusyError);
+    finishCleanup.resolve();
+    await cancelled;
+    assert.equal(await other.download(actor, new AbortController().signal, async () => 42), 42);
+    const status = await other.status(actor.id);
+    assert.equal(status.job?.kind, "download");
+    assert.equal(status.job?.state, "succeeded");
+    assert.equal(status.total, 0, "raw downloads do not enter retention or delete managed copies");
+  } finally {
+    controller.abort();
+    finishCleanup.resolve();
+    await cancelled;
+    await other.close();
+    connection.close();
+    await f.close();
+  }
+});
+
 test("remote copies restore from original destination after settings change; failed upload never prunes", async () => {
   const vault = mkdtempSync(join(tmpdir(), "drevo-test-vault-"));
   let fail = false,

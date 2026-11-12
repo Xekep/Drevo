@@ -180,14 +180,16 @@ export function preparationRequest(
   };
   const deadline = setTimeout(abort, deadlineMs);
   deadline.unref();
+  const close = () => { if (!res.writableFinished) abort(); };
   req.once("aborted", abort);
-  res.once("close", abort);
+  res.once("close", close);
+  if (req.aborted || res.destroyed) abort();
   return {
     signal: controller.signal,
     dispose() {
       clearTimeout(deadline);
       req.off("aborted", abort);
-      res.off("close", abort);
+      res.off("close", close);
     },
   };
 }

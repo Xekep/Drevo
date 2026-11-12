@@ -99,6 +99,50 @@ test("one catalog source confirms multiple facts, stays current, and legacy cita
   }
 });
 
+test("catalog links initialize missing event sources and survive rereads without accepting stale writes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-event-source-"));
+  const app = await startServer(0, join(dir, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  const request = (path: string, method: string, value: unknown) => fetch(base + path, {
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
+  });
+  try {
+    const original = await app.archive.read();
+    const family = structuredClone(original.family);
+    family.people = [{ id: "person", name: "Test", surname: "Source", patronymic: "",
+      sex: "u", birth: "", birthPlace: "", parents: [], spouses: [],
+      generation: 1, column: 0, sources: [],
+      events: [{ id: "missing", type: "move" }, { id: "empty", type: "move", sources: [] }] }];
+    await app.archive.write(family, original.revision);
+    const created = await request("/api/sources", "POST", { title: "Evidence" });
+    assert.equal(created.status, 201);
+    const { source } = await created.json() as { source: { id: string } };
+    const path = `/api/sources/${source.id}/links`;
+    for (const eventId of ["missing", "empty"]) {
+      const before = await app.archive.read();
+      const link = { personId: "person", eventId, revision: before.revision };
+      assert.equal((await request(path, "POST", link)).status, 200);
+      const saved = await app.archive.read();
+      assert.equal(saved.family.people[0].events?.find(event => event.id === eventId)
+        ?.sources?.[0].catalogId, source.id);
+      const row = await app.archive.db.prepare("SELECT data FROM people WHERE id=?").get("person");
+      const persisted = JSON.parse(String(row!.data)) as Family["people"][number];
+      assert.equal(persisted.events?.find(event => event.id === eventId)?.sources?.[0].catalogId, source.id);
+      assert.equal((await request(path, "POST", { ...link, revision: saved.revision })).status, 409);
+      assert.equal((await request(path, "DELETE", link)).status, 409);
+      assert.deepEqual(await app.archive.read(), saved);
+      assert.equal((await request(path, "DELETE", { ...link, revision: saved.revision })).status, 200);
+      const removed = await app.archive.read();
+      assert.deepEqual(removed.family.people[0].events?.find(event => event.id === eventId)?.sources, []);
+      assert.equal((await request(path, "POST", link)).status, 409);
+      assert.deepEqual(await app.archive.read(), removed);
+    }
+  } finally {
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("source catalog search is server-paginated and rejects invalid bounds", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-source-page-"));
   const app = await startServer(0, join(dir, "archive.sqlite"), true);

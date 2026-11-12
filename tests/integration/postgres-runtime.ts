@@ -4702,6 +4702,24 @@ try {
     schedule: false,
   });
   try {
+    const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+    const preparing = manager.download(owner, new AbortController().signal, async () => {
+      started.resolve();
+      await finish.promise;
+    });
+    try {
+      await Promise.race([started.promise, preparing.then(() => {
+        throw new Error("Download preparation ended before acquiring its lease");
+      })]);
+      const raw = await fetch(securedBase + "/api/backup", { headers: ownerHeaders });
+      assert.equal(raw.status, 409, "raw download honors another coordinator's PostgreSQL lease");
+      await raw.arrayBuffer();
+      const managed = await fetch(securedBase + "/api/backups/create", {
+        method: "POST", headers: { ...ownerHeaders, "x-drevo-backup": "1" }, body: "{}",
+      });
+      assert.equal(managed.status, 409, "managed creation shares the raw preparation lease");
+      await managed.arrayBuffer();
+    } finally { finish.resolve(); await preparing; }
     await manager.startCreate(owner);
     await manager.idle();
     const status = await manager.status(owner.id);

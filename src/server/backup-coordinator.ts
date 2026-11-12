@@ -247,9 +247,11 @@ export async function backupCoordinator(
         await log(
           kind === "create"
             ? "Создана резервная копия"
-            : kind === "check"
-              ? "Проверено хранилище копий"
-              : "Проверен бэкап для восстановления",
+            : kind === "download"
+              ? "Подготовлена копия для скачивания"
+              : kind === "check"
+                ? "Проверено хранилище копий"
+                : "Проверен бэкап для восстановления",
           job.startedAt,
           actor,
         );
@@ -342,6 +344,32 @@ export async function backupCoordinator(
     record,
     withFile,
     startCreate,
+    async download<T>(
+      actor: ArchiveUser,
+      requestSignal: AbortSignal,
+      prepare: (signal: AbortSignal) => Promise<T>,
+      access?: BackupJobAccess,
+    ): Promise<T> {
+      requestSignal.throwIfAborted();
+      let result!: T;
+      let failure: unknown;
+      let succeeded = false;
+      const job = await launch("download", actor, async () => {
+        try {
+          const combined = AbortSignal.any([signal, requestSignal]);
+          combined.throwIfAborted();
+          result = await prepare(combined);
+          combined.throwIfAborted();
+          succeeded = true;
+        } catch (error) {
+          failure = error;
+          throw error;
+        }
+      }, false, access);
+      await pending;
+      if (!succeeded) throw failure ?? new Error(job?.error || "Подготовка копии прервана.");
+      return result;
+    },
     tick,
     async check(value: unknown, actor: ArchiveUser, access?: BackupJobAccess) {
       const config = validateBackupSettings(value);

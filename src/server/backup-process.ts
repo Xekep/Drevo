@@ -12,6 +12,7 @@ export function backupProcess(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let failure: BackupWorkerFailure | null = null;
+    let startFailed = false;
     const child = spawn(command, args, {
       windowsHide: true,
       stdio: options.workerDiagnostics ? ["ignore", "ignore", "ignore", "ipc"] : "ignore",
@@ -22,16 +23,17 @@ export function backupProcess(
     if (options.workerDiagnostics) child.on("message", value => {
       failure = readBackupWorkerFailure(value) || failure;
     });
-    child.once("error", () =>
-      reject(
+    // Abort also emits error before close. Keep the lease and staging files
+    // until the child has actually stopped writing.
+    child.once("error", () => { startFailed = true; });
+    child.once("close", code => {
+      if (startFailed) return reject(
         new Error(
           options.workerDiagnostics && signal.aborted ? "Создание переносимой копии отменено."
             : options.workerDiagnostics ? "Не удалось запустить создание переносимой копии. Проверьте настройку сервера."
             : `Не удалось запустить ${command}; проверьте настройку сервера.`,
         ),
-      ),
-    );
-    child.once("close", code => {
+      );
       if (code === 0) return resolve();
       if (options.workerDiagnostics) {
         if (signal.aborted) return reject(new Error("Создание переносимой копии отменено."));

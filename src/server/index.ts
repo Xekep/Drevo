@@ -481,6 +481,7 @@ export async function startServer(
     const treeLayouts = dbPath === ":memory:" ? undefined : sharedTreeLayoutCache(dirname(dbPath), work.layouts);
     if (treeLayouts) own(() => treeLayouts.close());
     const handleArchive = await archiveHttp({
+      backups,
       treeLayouts,
       aiSecrets:
         configuredPath === ":memory:" ? archive.db : { file: configuredPath },
