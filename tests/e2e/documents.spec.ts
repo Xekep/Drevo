@@ -295,7 +295,8 @@ test("источник карточки связывается с PDF без к�
   await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
   await event.locator(".event-extra > summary").click();
-  await expect(event.getByRole("button", { name: "Добавить источник" })).toHaveCount(0);
+  await expect(event.getByRole("button", { name: /Добавить источник \(ссылка или документ/ })).toBeVisible();
+  await expect(event.locator(".event-source-editor")).toHaveCount(0);
   await event.getByLabel("Дата", { exact: true }).fill("1991");
   await savePersonDetails(page);
   await expect(page.locator(".life-event").last()).toContainText("1991");
