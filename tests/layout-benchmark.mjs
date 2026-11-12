@@ -390,9 +390,8 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
   const trace = [];
   const completedSeeds = new Set();
   const layout = async (graph) => {
-    if (wholeTreeSearch === "baseline" && people.length > 300 &&
-      graph.layoutOptions?.["elk.layered.crossingMinimization.greedySwitch.activationThreshold"] === "0" &&
-      graph.layoutOptions?.["elk.layered.thoroughness"] !== "1")
+    if (wholeTreeSearch === "baseline" &&
+      graph.layoutOptions?.["elk.layered.crossingMinimization.forceNodeModelOrder"] === "true")
       throw new Error("skip whole-tree trial for baseline measurement");
     const seed = Number(graph.layoutOptions?.["elk.randomSeed"]);
     if (disableCompact && graph.layoutOptions?.["elk.layered.layering.strategy"] === "MIN_WIDTH")

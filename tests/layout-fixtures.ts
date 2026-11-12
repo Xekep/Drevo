@@ -6,6 +6,38 @@ export const person = (
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
 
+/** Cousin branches join through several marriages; no private genealogy data. */
+export function crossBranchMarriages(seed: number): LayoutPerson[] {
+  let state = seed;
+  const random = () => ((state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+  const people = [person("root-a", [], ["root-b"]), person("root-b", [], ["root-a"])];
+  let families = [["root-a", "root-b"]], index = 0;
+  for (let level = 0; level < 3; level++) {
+    const next: string[][] = [];
+    for (const family of families) for (let child = 0; child < 2; child++) {
+      const a = person(`child-${index}`, family, [`partner-${index}`]),
+        b = person(`partner-${index}`, [], [a.id]);
+      index++; people.push(a, b); next.push([a.id, b.id]);
+    }
+    families = next;
+  }
+  const leaves: LayoutPerson[] = [];
+  for (const family of families) for (let child = 0; child < 2; child++) {
+    const leaf = person(`leaf-${leaves.length}`, family);
+    people.push(leaf); leaves.push(leaf);
+  }
+  for (let i = leaves.length - 1; i > 0; i--) {
+    const other = Math.floor(random() * (i + 1));
+    [leaves[i], leaves[other]] = [leaves[other], leaves[i]];
+  }
+  for (let i = 0; i < leaves.length; i += 2) {
+    leaves[i].spouses.push(leaves[i + 1].id);
+    leaves[i + 1].spouses.push(leaves[i].id);
+    people.push(person(`last-${i}`, [leaves[i].id, leaves[i + 1].id]));
+  }
+  return people;
+}
+
 /** Connected descendant families with no marriages between existing branches. */
 export function branchingFamily(count: number): LayoutPerson[] {
   if (!Number.isSafeInteger(count) || count < 2) throw new RangeError("At least two people are required");

@@ -20,7 +20,8 @@ import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { shortenFamilyRows } from "./family-row-shortening.ts";
-import { finishColdFamilyLayout, preferColdFamilyLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
+import { finishColdFamilyLayout, preferColdFamilyLayout, preferJointUnionLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
+import { jointUnionOrder } from "./joint-union-order.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
@@ -72,7 +73,7 @@ export type UnionBlock = {
   height: number;
 };
 type Unit = UnionGroup;
-type LargeDecrossProfile = "greedy" | "sweep" | "thorough";
+type LargeDecrossProfile = "greedy" | "sweep";
 const unionId = (ids: string[]) => `union:${JSON.stringify([...ids].sort())}`;
 
 /** Один союз — одна точная пара. Общий супруг не объединяет разные союзы. */
@@ -383,10 +384,9 @@ async function geometryForSeed(
       ...(profile
         ? {
             "elk.layered.considerModelOrder.strategy": "NONE",
-            "elk.layered.thoroughness": profile === "greedy" ? "1" :
-              profile === "thorough" && people.length > 4000 ? "4" : "12",
+            "elk.layered.thoroughness": profile === "greedy" ? "1" : "12",
             "elk.layered.crossingMinimization.greedySwitch.activationThreshold":
-              profile === "sweep" ? "40" : "0",
+              profile === "greedy" ? "0" : "40",
             "elk.layered.crossingMinimization.greedySwitch.type": "TWO_SIDED",
           }
         : {}),
@@ -725,9 +725,14 @@ export async function unionGeometry(
   });
   const initialProfile =
     people.length > 900 && largeDecross ? "greedy" : undefined;
+  let jointGraph: ElkNode | undefined;
   let best = await geometryForSeed(
     people,
-    layout,
+    async graph => {
+      if (!previous && largeDecross && graph.children!.length <= 1000)
+        jointGraph = structuredClone(graph);
+      return layout(graph);
+    },
     reverse,
     links,
     1,
@@ -1255,6 +1260,29 @@ export async function unionGeometry(
   };
   best = finish(best);
   const baseline = best;
+  if (jointGraph && geometryQuality(best).crossings) {
+    try {
+      const plan = jointUnionOrder(jointGraph, best);
+      if (plan) {
+        const placed = await geometryForSeed(people, graph => layout({
+          ...graph,
+          children: [...graph.children!].sort((a, b) => plan.order.get(a.id)! - plan.order.get(b.id)!),
+          layoutOptions: { ...graph.layoutOptions,
+            "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
+            "elk.layered.thoroughness": "1",
+          },
+        }), reverse, links, 1, size, false, undefined, plan.flippedPairs);
+        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
+        const nextExtent = extent(candidate), oldExtent = extent(best);
+        if (Math.max(nextExtent.width, nextExtent.height) <=
+          Math.max(oldExtent.width, oldExtent.height) * 1.4 &&
+          nextExtent.width * nextExtent.height <= oldExtent.width * oldExtent.height * 1.5 &&
+          preferJointUnionLayout(candidate, best, size, finalScore)) return candidate;
+      }
+    } catch {
+      // A failed model or speculative placement cannot discard the complete baseline.
+    }
+  }
   // Model-ordered scores do not predict independent placements. First solve
   // the bounded free-order portfolio; only two promising results receive the
   // expensive family passes. Final acceptance always compares complete scenes.
@@ -1287,27 +1315,6 @@ export async function unionGeometry(
       } catch {
         // An independent solver proposal cannot invalidate the accepted scene.
       }
-    }
-  }
-  if (largeDecross && people.length > 300 && geometryQuality(best).crossings) {
-    // Keep the complete accepted scene while trying two global seed orders
-    // with thorough sweeps and greedy switches. Budget the search, never people.
-    for (const seed of new Set([bestSeed, 8])) {
-      try {
-        const placed = await geometryForSeed(people, layout, reverse, links, seed, size,
-          false, undefined, undefined, "thorough");
-        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
-        const candidateExtent = extent(candidate), baselineExtent = extent(baseline);
-        if (Math.max(candidateExtent.width, candidateExtent.height) <=
-          Math.max(baselineExtent.width, baselineExtent.height) * 1.4 &&
-          candidateExtent.width * candidateExtent.height <=
-          baselineExtent.width * baselineExtent.height * 1.5 &&
-          preferColdFamilyLayout(candidate, best, size, finalScore) &&
-          preferColdFamilyLayout(candidate, baseline, size, finalScore)) best = candidate;
-      } catch {
-        // The complete baseline remains usable when an extra solver fails.
-      }
-      if (!geometryQuality(best).crossings) break;
     }
   }
   return best;
