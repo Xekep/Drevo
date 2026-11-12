@@ -6,7 +6,7 @@ import type { ClaimConfidence, EventFactAlternative, PersonEvent, Source } from 
 import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence.ts";
 import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
-import { claimableEventDate, eventHasEvidence, retypeEvent, EVENT_NAMES } from "../domain/person-events";
+import { claimableEventDate, eventHasEvidence, migrateLegacyEducationEvent, retypeEvent, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
 import { PersonDetailDialog } from "./person-detail-dialog";
 import { validateEvents } from "../domain/person-events";
@@ -104,6 +104,10 @@ export function EventsEditor({
       ...normalizeEventCalendarDates(editing),
       alternatives: editing.alternatives?.map((item) => ({ ...item,
         value: item.field === "date" ? normalizeDateInput(item.value) : item.value.trim() })),
+      sources: editing.sources?.filter((source) => source.catalogId || source.title.trim() ||
+        source.type.trim() || source.reference.trim() || source.url?.trim() ||
+        source.note?.trim() || source.documentId ||
+        (source.repository && Object.values(source.repository).some((value) => value.trim()))),
     };
     validateEvents([normalized]);
     validateEventEvidence(normalized);
@@ -146,7 +150,7 @@ export function EventsEditor({
             onClick={(e) => {
               e.preventDefault();
               setOpenId(event.id);
-              setEditing(structuredClone(event));
+              setEditing(migrateLegacyEducationEvent(structuredClone(event)));
             }}
           >
             <span>
@@ -181,6 +185,41 @@ export function EventsEditor({
                 disabled={!canAssess && hasAssessment(event)}
                 onChange={(change) => update(event.id, { title: change.target.value || undefined })} />
             </label>}
+            {section === "education" && <>
+              <label>
+                Направление / специальность
+                <input maxLength={1000} value={event.educationField || ""}
+                  placeholder="Например, программная инженерия, электротехника"
+                  onChange={(change) => update(event.id, { educationField: change.target.value || undefined })} />
+              </label>
+              {!event.educationField && !!event.description?.trim() &&
+                !event.description.includes("\n") && event.description.length <= 1000 && (
+                  <button type="button" className="event-migrate-field"
+                    onClick={() => update(event.id, {
+                      educationField: event.description?.trim(), description: undefined,
+                    })}>
+                    Перенести старое описание в направление / специальность
+                  </button>
+                )}
+              <label>
+                Квалификация / степень
+                <input maxLength={1000} value={event.educationQualification || ""}
+                  placeholder="Например, бакалавр, инженер, техник"
+                  onChange={(change) => update(event.id, { educationQualification: change.target.value || undefined })} />
+              </label>
+              <label>
+                Результат обучения
+                <select value={event.educationStatus || ""}
+                  onChange={(change) => update(event.id, {
+                    educationStatus: (change.target.value || undefined) as PersonEvent["educationStatus"],
+                  })}>
+                  <option value="">Не указано</option>
+                  <option value="completed">Окончил(а)</option>
+                  <option value="ongoing">Учится</option>
+                  <option value="unfinished">Не окончил(а)</option>
+                </select>
+              </label>
+            </>}
             {section !== "education" && <label>
               Событие
               <select
@@ -200,6 +239,39 @@ export function EventsEditor({
                 ))}
               </select>
             </label>}
+            {event.type === "work" && <>
+              <label>
+                Организация / место работы
+                <input maxLength={1000} value={event.organization || ""}
+                  placeholder="Название предприятия или учреждения"
+                  onChange={(change) => update(event.id, { organization: change.target.value || undefined })} />
+              </label>
+              <label>
+                Должность / профессия
+                <input maxLength={1000} value={event.position || ""}
+                  placeholder="Например, слесарь, инженер"
+                  onChange={(change) => update(event.id, { position: change.target.value || undefined })} />
+              </label>
+            </>}
+            {event.type === "military" && <>
+              <label>
+                Воинская часть / подразделение
+                <input maxLength={1000} value={event.militaryUnit || ""}
+                  placeholder="Например, 544-й стрелковый полк"
+                  onChange={(change) => update(event.id, { militaryUnit: change.target.value || undefined })} />
+              </label>
+              <label>
+                Воинское звание
+                <input maxLength={1000} value={event.militaryRank || ""}
+                  onChange={(change) => update(event.id, { militaryRank: change.target.value || undefined })} />
+              </label>
+            </>}
+            {event.type === "move" && <label>
+              Откуда переехал(а)
+              <input maxLength={1000} value={event.moveFrom || ""}
+                placeholder="Прежний населённый пункт"
+                onChange={(change) => update(event.id, { moveFrom: change.target.value || undefined })} />
+            </label>}
             {(resetEventIds.has(event.id) || saveTypeFirst(event)) && <p role="status">При смене типа из черновика сняты данные прежнего события: источники, оценки, другие значения или исходный тег GEDCOM. Сохраните новый тип, затем добавьте подходящие данные.</p>}
             {event.type === "other" && (
               <label>
@@ -215,7 +287,7 @@ export function EventsEditor({
                 />
               </label>
             )}
-            <div className="event-date-field"><HistoricalDateInput label="Дата"
+            <div className="event-date-field"><HistoricalDateInput label={section === "education" ? "Начало учёбы" : "Дата"}
               date={event.date} dateJulian={event.dateJulian} dateByzantine={event.dateByzantine}
               onChange={(value) => update(event.id, value)} /></div>
             {section === "education" && <div className="event-end-date-field">
@@ -253,7 +325,9 @@ export function EventsEditor({
                   : <p>Укажите одну дату без периода или приблизительной формулировки, чтобы привязать свидетельство.</p>}
             </details>}
             <label>
-              Место
+              {section === "education" ? "Место учёбы" : event.type === "work" ? "Место работы" :
+                event.type === "military" ? "Место службы" : event.type === "move" ?
+                  "Куда переехал(а)" : "Место"}
               <input
                 maxLength={1000}
                 placeholder="Город, деревня или адрес"
@@ -448,6 +522,12 @@ export function EventsEditor({
                   </div>
                 ))}
                 </>}
+                <button type="button" className="event-add-source"
+                  disabled={(event.sources?.length || 0) >= 50}
+                  onClick={() => update(event.id, { sources: [...(event.sources || []),
+                    { title: "", type: "", reference: "" }] })}>
+                  <Plus size={14} /> Добавить источник (ссылка или документ, необязательно)
+                </button>
               </div>
             </details>
             {storedEvents.some((item) => item.id === event.id) && <button
@@ -520,6 +600,23 @@ export function PersonEvents({
             <div>
               <span className="event-label">{EVENT_NAMES[event.type]}</span>
               {event.title && <strong>{event.title}</strong>}
+              {event.type === "education" && event.educationField &&
+                <p>Направление / специальность: {event.educationField}</p>}
+              {event.type === "education" && event.educationQualification &&
+                <p>Квалификация: {event.educationQualification}</p>}
+              {event.type === "education" && event.educationStatus &&
+                <p>Результат: {({ completed: "окончил(а)", ongoing: "учится",
+                  unfinished: "не окончил(а)" })[event.educationStatus]}</p>}
+              {event.type === "work" && event.organization &&
+                <p>Организация: {event.organization}</p>}
+              {event.type === "work" && event.position &&
+                <p>Должность: {event.position}</p>}
+              {event.type === "military" && event.militaryUnit &&
+                <p>Часть: {event.militaryUnit}</p>}
+              {event.type === "military" && event.militaryRank &&
+                <p>Звание: {event.militaryRank}</p>}
+              {event.type === "move" && event.moveFrom &&
+                <p>Откуда: {event.moveFrom}</p>}
               {(event.date || event.endDate) && (
                 <b>
                   {event.date && dateLabel(event.date)}
