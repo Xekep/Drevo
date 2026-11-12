@@ -33,6 +33,7 @@ jobs:
       - run: npm run lint
       - run: bash -n ops/deploy.sh
       - run: bash -n ops/setup-server.sh
+      - run: bash -n ops/install-e2e-browser.sh
       - run: python3 -B -m unittest discover -s tests -p 'test_release_identity.py'
       - name: Validate Nginx site
         run: |
@@ -140,7 +141,8 @@ jobs:
         with:
           name: deploy-e2e-build
           path: .
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies
+        run: bash ops/install-e2e-browser.sh
         timeout-minutes: 12
       - run: npm run prepare:models
       # Отдельный сервер и SQLite на VM; все shards проверяют один dist из prepare.

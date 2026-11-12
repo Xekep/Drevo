@@ -704,6 +704,9 @@ test("H settings keep an unsaved draft on version conflict and refresh permissio
 
 test("all five reference shaders render their configured effect with exact photo endpoints", async ({ page }) => {
   test.setTimeout(120000);
+  // Install once, before the application creates timers. Reinstalling at a
+  // fixed date after each navigation can move the shared clock backwards.
+  await page.clock.install();
   await setup(page);
   let effect: ChronicleEffect = "glass";
   await page.route("**/api/chronicle-settings", route => route.fulfill({ json: { version: 1, canConfigure: false,
@@ -727,14 +730,15 @@ test("all five reference shaders render their configured effect with exact photo
     // Software WebGL can take longer than the entire transition to draw a
     // frame. Advance the animation clock explicitly so every shader is tested
     // at intermediate progress rather than depending on the runner's GPU/FPS.
-    const animationTime = new Date("2026-11-11T12:00:00Z");
-    await page.clock.install({ time: animationTime });
-    await page.clock.pauseAt(animationTime);
+    const pauseTime = await page.evaluate(() => Date.now() + 60_000);
+    await page.clock.pauseAt(pauseTime);
     await dialog.getByRole("button", { name: "Листать хронику дальше" }).click();
     await expect.poll(async () => {
-      await page.clock.runFor(100);
+      // One frame per step is enough to verify intermediate uniforms. runFor
+      // renders every 16 ms frame and can exhaust the budget on software GL.
+      await page.clock.fastForward(100);
       return dialog.getByRole("button", { name: "Листать хронику дальше" }).isEnabled();
-    }, { timeout: 15000 }).toBe(true);
+    }, { timeout: 30000, intervals: [0] }).toBe(true);
     await expect(dialog.getByLabel("Номер снимка")).toHaveText("2 / 3");
     const frames = await page.evaluate(() => (window as unknown as { effectFrames: Array<{ effect: number; progress: number }> }).effectFrames);
     expect(frames.some(frame => frame.effect === index && frame.progress === 0), name).toBe(true);
