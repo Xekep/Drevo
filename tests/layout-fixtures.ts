@@ -6,6 +6,28 @@ export const person = (
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
 
+/** Connected descendant families with no marriages between existing branches. */
+export function branchingFamily(count: number): LayoutPerson[] {
+  if (!Number.isSafeInteger(count) || count < 2) throw new RangeError("At least two people are required");
+  const people = [person("f-0", [], ["f-1"]), person("f-1", [], ["f-0"])];
+  const families = [["f-0", "f-1"]];
+  let childIndex = 0;
+  for (let family = 0; people.length < count; family++) {
+    for (let child = 0; child < 2 && people.length < count; child++) {
+      const member = person(`child-${childIndex}`, families[family]);
+      people.push(member);
+      if (people.length < count) {
+        const spouse = person(`partner-${childIndex}`, [], [member.id]);
+        member.spouses.push(spouse.id);
+        people.push(spouse);
+        families.push([member.id, spouse.id]);
+      }
+      childIndex++;
+    }
+  }
+  return people;
+}
+
 /** Одна и та же семейная структура для замеров раскладки и её регрессий. */
 export function randomFamily(seed: number, generations = 2): LayoutPerson[] {
   let state = seed;

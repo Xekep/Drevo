@@ -9,7 +9,7 @@ import {
 import { preferColdFamilyLayout } from "../src/domain/family-layout-candidates.ts";
 import { treeNodeSize } from "../src/domain/tree-layout-constants.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
-import { randomFamily } from "./layout-fixtures.ts";
+import { branchingFamily, randomFamily } from "./layout-fixtures.ts";
 
 const wholeTreeTrial = (graph: ElkNode) =>
   graph.layoutOptions?.["elk.layered.thoroughness"] === "12" &&
@@ -18,12 +18,7 @@ const wholeTreeTrial = (graph: ElkNode) =>
   ] === "0";
 
 test("a large clear scene keeps every person without extra global trials", async () => {
-  const people = Array.from({ length: 1001 }, (_, index) => ({
-    id: `person-${index}`,
-    birth: "",
-    parents: [],
-    spouses: [],
-  }));
+  const people = branchingFamily(1001);
   const elk = new ELK({ algorithms: ["layered"] });
   let calls = 0;
   const geometry = await unionGeometry(

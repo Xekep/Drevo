@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { DEFAULT_TREE_PREFERENCES } from "../../src/domain/tree-preferences";
-import { randomFamily } from "../layout-fixtures";
+import { branchingFamily } from "../layout-fixtures";
 
 for (const large of [false, true])
   for (const cached of [false, true])
@@ -14,7 +14,9 @@ for (const large of [false, true])
         const data = await response.json();
         if (large) {
           const template = data.family.people[0];
-          data.family.people = randomFamily(1, 6).map((person) => ({
+          // Keep the large connected graph while isolating camera startup.
+          // Crowded crossing optimization has its own whole-tree regressions.
+          data.family.people = branchingFamily(503).map((person) => ({
             ...template,
             ...person,
             name: person.id,
