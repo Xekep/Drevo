@@ -40,16 +40,13 @@ export async function prepareFullBackup(
 
 export async function fullBackup(
   db: StoreDatabase,
-  pathOrResponse: string | ServerResponse,
-  legacyResponse?: ServerResponse,
+  res: ServerResponse,
   beforeSend?: () => Promise<void>,
   deliverPrepared?: (path: string, res: ServerResponse) => Promise<void>,
   treeOnly = false,
   signal = AbortSignal.timeout(30 * 60_000),
 ) {
-  const dbPath =
-      typeof pathOrResponse === "string" ? pathOrResponse : databasePath(db),
-    res = typeof pathOrResponse === "string" ? legacyResponse! : pathOrResponse;
+  const dbPath = databasePath(db);
   const directory = await mkdtemp(join(tmpdir(), "drevo-full-"));
   try {
     const destination = await prepareFullBackup(db, dbPath, directory, treeOnly, signal);

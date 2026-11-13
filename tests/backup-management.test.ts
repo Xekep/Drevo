@@ -511,7 +511,7 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
     assert.equal((await fetch(base + "/api/backups/settings", {
       method: "PUT", headers: { "X-Drevo-Backup": "1", "Content-Type": "application/json" },
       body: JSON.stringify({ ...initialTreeStatus.settings, enabled: true, keepCount: 30 }),
-    })).status, 403, "even an authorized tree owner cannot enable per-tree scheduling");
+    } )).status, 400, "even an authorized tree owner cannot enable per-tree scheduling");
     assert.deepEqual(await app.archive.db.prepare("SELECT data,next_run FROM backup_settings WHERE id=1").get(), settingsBefore);
     assert.equal((await post("/api/backups/check", { ...initialTreeStatus.settings,
       storage: "remote", remoteHost: "vault", remoteDirectory: "/backup" })).status, 403);

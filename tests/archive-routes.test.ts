@@ -10,6 +10,9 @@ import {
   archiveDocumentPath,
   archivePaths,
   archiveViewAt,
+  archiveAlbumPath,
+  archiveAlbumAt,
+  discoveryPageAt,
   invitationAt,
 } from "../src/domain/archive-routes.ts";
 import {
@@ -17,14 +20,37 @@ import {
   archiveTargetPath,
 } from "../src/domain/archive-links.ts";
 
-test("opaque invitation routes and temporarily supported legacy links are exact", () => {
+test("opaque invitations accept only current links", () => {
   const token = "a".repeat(43);
   assert.deepEqual(invitationAt(`/join/${token}`), { token });
-  assert.deepEqual(invitationAt(`/join/legacy-primary/${token}`), { archiveId: "legacy-primary", token });
+  assert.equal(invitationAt(`/join/legacy-primary/${token}`), null);
   for (const path of ["/join/", `/join/${token}/`, `/join/${token}/extra`,
     `/join/${token.slice(1)}`, `/join/${token}a`, `/join/${"%61".repeat(43)}`,
     `/join/../${token}`, `/join/family/${token}?token=other`])
     assert.equal(invitationAt(path), null);
+});
+
+test("personal albums have plain paths distinct from individual photo addresses", () => {
+  const id = "53db9bb4-2610-4e1b-a1db-e768026a31ae";
+  assert.equal(archiveAlbumPath(id), `/photos/${id}`);
+  assert.equal(archiveAlbumAt(`/a/family-one/photos/${id}`), id);
+  for (const personId of ["Иван/ветвь", "x".repeat(150)])
+    assert.equal(archiveAlbumAt(archiveAlbumPath(personId)), personId);
+  assert.equal(archiveViewAt(`/photos/${id}`), "gallery");
+  assert.equal(archiveTargetAt(`/photos/${id}`, ""), null);
+  assert.equal(archiveTargetPath({ kind: "photo", id }), `/photo/${id}`);
+  assert.deepEqual(archiveTargetAt(`/photo/${id}`, ""), { kind: "photo", id });
+  for (const path of ["/photos/%ZZ", "/photos/%00", "/photos/..", "/photos/id/more"])
+    assert.equal(archiveAlbumAt(path), null);
+  assert.deepEqual(discoveryPageAt(`/discover/person/${id}/person-one`),
+    { query: null, archiveId: id, personId: "person-one" });
+  for (const path of ["/discover/person/legacy-primary/person-one", "/discover/person/person-one",
+    `/discover/person/${id}/%2Fhidden`, `/discover/person/${id}/%00`])
+    assert.equal(discoveryPageAt(path), null);
+  assert.equal(discoveryPageAt("/discover", "?q=old"), null);
+  for (const [path, query] of [["/tree", "?person=old"], ["/photos", "?photo=old"],
+    ["/photos", "?personId=old"], ["/documents", "?documentId=old"]])
+    assert.equal(archiveViewAt(path, query), null);
 });
 
 test("all archive sections have stable exact URLs shared by browser and server", () => {
@@ -38,9 +64,9 @@ test("all archive sections have stable exact URLs shared by browser and server",
   assert.equal(archiveViewAt(adminMatchesPath), "manage");
   assert.equal(archiveViewAt(`/a/family-one${adminMatchesPath}`), "manage");
   assert.equal(archiveViewAt("/admin"), "admin");
-  assert.equal(archiveViewAt("/a/family-one/admin"), "manage");
-  assert.equal(archiveViewAt("/a/family-one/admin/matches"), "manage");
-  assert.equal(archiveViewAt("/admin/matches"), "manage");
+  assert.equal(archiveViewAt("/a/family-one/admin"), null);
+  assert.equal(archiveViewAt("/a/family-one/admin/matches"), null);
+  assert.equal(archiveViewAt("/admin/matches"), null);
   for (const path of [
     "/admin-secret",
     "/api/family",
@@ -61,7 +87,7 @@ test("a published card handoff keeps the exact target in an archive-scoped path"
   assert.equal(new URL(path, "https://example.test").search, "");
   assert.deepEqual(adminMatchTargetAt(path), target);
   assert.equal(archiveViewAt(path), "manage");
-  assert.deepEqual(adminMatchTargetAt(path.replace("/manage/", "/admin/")), target);
+  assert.equal(adminMatchTargetAt(path.replace("/manage/", "/admin/")), null);
   for (const invalid of [
     "/a/family-one/admin/matches/target/other-tree/%ZZ",
     "/a/family-one/admin/matches/target/other-tree/%252F",
@@ -79,7 +105,7 @@ test("a tree card handoff keeps the exact source in an archive-scoped path", () 
   assert.equal(new URL(path, "https://example.test").search, "");
   assert.equal(adminMatchSourceAt(path), "gedcom-Иван 1");
   assert.equal(archiveViewAt(path), "manage");
-  assert.equal(adminMatchSourceAt(path.replace("/manage/", "/admin/")), "gedcom-Иван 1");
+  assert.equal(adminMatchSourceAt(path.replace("/manage/", "/admin/")), null);
   for (const invalid of [
     "/a/family-one/admin/matches/from/%ZZ",
     "/a/family-one/admin/matches/from/%252F",
@@ -103,22 +129,16 @@ test("profile and photo links retain their entity without changing section route
       target.kind === "person" ? "tree" : "gallery",
     );
   }
-  assert.deepEqual(archiveTargetAt("/tree", "?person=unknown"), {
-    kind: "person",
-    id: "unknown",
-  });
+  assert.equal(archiveTargetAt("/tree", "?person=unknown"), null);
   assert.equal(
     archiveTargetPath({ kind: "person", id: "unknown" }),
     "/people/unknown",
   );
   assert.equal(
     archiveTargetPath({ kind: "photo", id: "photo-42" }),
-    "/photos/photo-42",
+    "/photo/photo-42",
   );
-  assert.deepEqual(archiveTargetAt("/photos", "?photo=photo-42"), {
-    kind: "photo",
-    id: "photo-42",
-  });
+  assert.equal(archiveTargetAt("/photos", "?photo=photo-42"), null);
   assert.equal(archiveTargetAt("/people", "?person=unknown"), null);
   assert.equal(archiveTargetAt("/photos", "?photo="), null);
   assert.equal(archiveTargetAt("/photos", `?photo=${"x".repeat(201)}`), null);

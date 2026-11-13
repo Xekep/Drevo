@@ -14,23 +14,22 @@ export async function settingsStore(db: StoreDatabase) {
       "INSERT INTO archive_tree_settings(archive_id,reverse_timeline) VALUES(current_setting('drevo.archive_id', true),false) ON CONFLICT DO NOTHING",
     )
     .run();
-  const initial = process.env.ARCHIVE_PRIVATE === "0" ? 1 : 0;
   await db
     .prepare(
       "INSERT OR IGNORE INTO access_settings(id,public_tree,public_albums) VALUES(1,?,?)",
       "INSERT INTO archive_access_settings(archive_id,public_tree,public_albums) VALUES(current_setting('drevo.archive_id', true),?::integer<>0,?::integer<>0) ON CONFLICT DO NOTHING",
     )
-    .run(initial, initial);
+    .run(0, 0);
+  // Retire existing whole-archive grants, including legacy environment defaults.
+  await db.prepare(
+    "UPDATE access_settings SET public_tree=0,public_albums=0 WHERE id=1 AND (public_tree<>0 OR public_albums<>0)",
+    "UPDATE archive_access_settings SET public_tree=false,public_albums=false WHERE archive_id=current_setting('drevo.archive_id',true) AND (public_tree OR public_albums)",
+  ).run();
   async function read(): Promise<Visibility> {
-    const row = (await db
-      .prepare(
-        "SELECT * FROM access_settings WHERE id=1",
-        "SELECT * FROM runtime_access_settings WHERE id=1",
-      )
-      .get())!;
     return {
-      publicTree: !!row.public_tree,
-      publicAlbums: !!row.public_albums,
+      // Stored flags in an imported backup must never reopen anonymous access.
+      publicTree: false,
+      publicAlbums: false,
       reverseTimeline: !!(await db
         .prepare(
           "SELECT reverse_timeline FROM tree_settings WHERE id=1",
@@ -51,21 +50,11 @@ export async function settingsStore(db: StoreDatabase) {
           typeof v.reverseTimeline !== "boolean")
       )
         throw new Error("Укажите видимость древа и альбомов");
+      if (v.publicTree || v.publicAlbums)
+        throw new Error("Для общего доступа создайте временную ссылку на выбранных людей");
       const reverse = v.reverseTimeline ?? (await read()).reverseTimeline;
       const before = await read();
       await db.transaction(async () => {
-        if (
-          (v.publicTree || v.publicAlbums) &&
-          (await db
-            .prepare(
-              "SELECT 1 FROM users WHERE tree_access='common_ancestors' LIMIT 1",
-              "SELECT 1 FROM runtime_users WHERE tree_access='common_ancestors' LIMIT 1",
-            )
-            .get())
-        )
-          throw new Error(
-            "Публичный просмотр недоступен, пока у участников есть ограниченный доступ",
-          );
         await db
           .prepare(
             "UPDATE access_settings SET public_tree=?,public_albums=? WHERE id=1",

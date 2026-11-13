@@ -11,6 +11,7 @@ import { photoFileError } from "../domain/photo-upload";
 import { ArchiveLink } from "./archive-link";
 import { archiveTargetPath } from "../domain/archive-links";
 import { scopedArchivePath } from "../domain/archive-context";
+import { archiveAlbumPath } from "../domain/archive-routes";
 import type {
   GalleryPage,
   GalleryQuery,
@@ -325,10 +326,6 @@ export function Gallery({
           </p>
         </div>
         <div className="gallery-heading-actions">
-          {filterPerson && !yearFilter && activeMode === "all" && onChronicle &&
-            (loadPage ? page?.total || 0 : available.length) > 1 && (
-            <button type="button" onClick={() => onChronicle(filterPerson.id)}>Хроника</button>
-          )}
           <div
             className="gallery-modes segmented"
             aria-label="Группировка фотографий"
@@ -360,12 +357,18 @@ export function Gallery({
               </button>
             ))}
           </div>
+          <div className="gallery-actions">
+          {filterPerson && !yearFilter && activeMode === "all" && onChronicle &&
+            (loadPage ? page?.total || 0 : available.length) > 1 && (
+            <button className="gallery-action" type="button" onClick={() => onChronicle(filterPerson.id)}>Хроника</button>
+          )}
           {mayEdit && (
-            <button className="primary-action" onClick={onAdd}>
+            <button className="gallery-action" type="button" onClick={onAdd}>
               <ImagePlus size={18} />
               Добавить фото
             </button>
           )}
+          </div>
         </div>
       </div>
       {album && (
@@ -410,14 +413,7 @@ export function Gallery({
             <ArchiveLink
               key={item.id}
               href={scopedArchivePath(
-                `/photos?${new URLSearchParams({
-                  ...(activeMode === "people"
-                    ? { personId: item.id }
-                    : {
-                        ...(personFilter ? { personId: personFilter } : {}),
-                        year: item.id,
-                      }),
-                })}`,
+                activeMode === "people" ? archiveAlbumPath(item.id) : archiveAlbumPath(personFilter || null, item.id),
               )}
               onNavigate={() => {
                 if (activeMode === "people") {

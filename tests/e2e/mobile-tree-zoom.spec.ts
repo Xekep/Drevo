@@ -50,7 +50,7 @@ test("mobile photo pinch changes only the photograph", async ({ page }, info) =>
   await page.route("**/media/zoom-photo.png**", route => route.fulfill({
     contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#738273"/></svg>',
   }));
-  await page.goto(`/photos/${photo.id}`);
+  await page.goto(`/photo/${photo.id}`);
   const image = page.locator(".photo-slide-current .tag-image");
   await expect(image).toBeVisible();
   const toolbar = page.getByRole("group", { name: "Действия с фотографией" });

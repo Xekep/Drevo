@@ -119,10 +119,10 @@ export function PublishPersonDialog({
       setBusy(false);
     }
   }
-  const link = new URL(
-    `/discover/person/${status?.archiveId ? `${encodeURIComponent(status.archiveRouteId || status.archiveId)}/` : ""}${encodeURIComponent(person.id)}`,
+  const link = status?.archiveRouteId ? new URL(
+    `/discover/person/${encodeURIComponent(status.archiveRouteId)}/${encodeURIComponent(person.id)}`,
     location.origin,
-  ).href;
+  ).href : null;
   const possibleFields = [
     { key: "birthSurname", label: "Фамилия при рождении", value: person.maidenName },
     { key: "birthYear", label: "Год рождения", value: person.birth?.match(/\b\d{4}\b/)?.[0] },
@@ -175,7 +175,7 @@ export function PublishPersonDialog({
             смерть. Если карточка уже была опубликована, снимите её с поиска.
           </p>
         )}
-        {status?.published && status.publishable && (
+        {status?.published && status.publishable && link && (
           <p>
             Ссылка:{" "}
             <a href={link} target="_blank" rel="noreferrer">

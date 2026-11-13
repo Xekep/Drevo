@@ -18,7 +18,7 @@ import { userStore } from "../../src/server/users.ts";
 import { fullName } from "../../src/domain/dates.ts";
 import type { Person } from "../../src/domain/types.ts";
 
-/** Real HTTP dispatch must retain the owner's session even for public target reads. */
+/** Real HTTP dispatch must retain the owner's session for read-only target views. */
 export async function verifyMemberPreview(
   app: Awaited<ReturnType<typeof startServer>>,
   client: Client,
@@ -84,6 +84,10 @@ export async function verifyMemberPreview(
       Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/W5kAAAAASUVORK5CYII=", "base64"));
     await client.query(`UPDATE archive_access_settings
       SET public_tree=true,public_albums=false WHERE archive_id=$1`, [archiveId]);
+    assert.equal((await fetch(`${prefix}/api/family?projection=overview`, { headers })).status,
+      401, "retired public flags cannot open a pending participant's preview");
+    await client.query(`UPDATE archive_memberships SET approved=true
+      WHERE archive_id=$1 AND user_id=$2`, [archiveId, targetId]);
     const publicFamily = await fetch(`${prefix}/api/family?projection=overview`, { headers });
     assert.equal(publicFamily.status, 200);
     const projected = await publicFamily.json();
@@ -171,12 +175,12 @@ export async function verifyMemberPreview(
           createdBy: "owner" })]);
       await client.query(`UPDATE archive_access_settings
         SET public_tree=false,public_albums=true WHERE archive_id=$1`, [archiveId]);
+      await client.query(`UPDATE archive_memberships SET approved=false
+        WHERE archive_id=$1 AND user_id=$2`, [archiveId, targetId]);
       const albumsOnly = await fetch(`${prefix}/api/family`, { headers: approvedHeaders });
-      assert.equal(albumsOnly.status, 200);
-      const albumFamily = (await albumsOnly.json()).family;
-      assert.deepEqual(albumFamily.people, []);
-      assert.deepEqual(albumFamily.links, []);
-      assert.deepEqual(albumFamily.unions, [], "public albums never disclose private unions");
+      assert.equal(albumsOnly.status, 401);
+      assert.equal("family" in await albumsOnly.json(), false,
+        "retired album flags cannot reveal private people or unions");
       await client.query(`UPDATE archive_access_settings
         SET public_tree=true,public_albums=false WHERE archive_id=$1`, [archiveId]);
       await client.query(`UPDATE archive_memberships SET approved=true,

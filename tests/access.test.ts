@@ -12,7 +12,6 @@ import { userStore } from "../src/server/users.ts";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 import {
   familyGroups,
-  validateFamily,
   type Family,
 } from "../src/domain/index.ts";
 
@@ -754,110 +753,22 @@ test("OAuth roles, ownership, public sections and selected tree backup work thro
           reverseTimeline: true,
         })
       ).status,
-      200,
+      400,
     );
-    let publicData = await request("/api/family").then((r) => r.json());
-    assert.equal(publicData.reverseTimeline, false);
-    assert.ok(publicData.family.people.length);
-    assert.equal(publicData.family.photos.length, 0);
-    assert.equal((await request("/api/people/search?q=Человек")).status, 200);
-    assert.equal((await request("/api/research-resources")).status, 200);
-    const publicOverview = await request(
-      "/api/family?projection=overview",
-    ).then((r) => r.json());
-    assert.equal(publicOverview.totals.photos, 0);
-    assert.equal(
-      (
-        await fetch(
-          base + "/api/places/locate?q=" + encodeURIComponent("Москва"),
-          { headers: { "X-Drevo-Map": "1" } },
-        )
-      ).status,
-      403,
-      "место скрытого снимка недоступно",
-    );
-    const exported = await request("/api/export.json").then((r) => r.json());
-    assert.equal(exported.people.length, publicData.family.people.length);
-    assert.equal(exported.photos, undefined);
-    assert.ok(
-      exported.people.every(
-        (p: Record<string, unknown>) => !("photo" in p) && !("createdBy" in p),
-      ),
-    );
-    assert.equal(
-      (await request("/api/export.json?download=1")).headers.get(
-        "content-disposition",
-      ),
-      'attachment; filename="drevo-family.json"',
-    );
-    assert.equal(
-      (await request("/api/export.json", admin, "POST", {})).status,
-      405,
-    );
-    assert.equal((await request(photo.url)).status, 401);
-    assert.equal((await request(photo.url + "?variant=thumb")).status, 401);
-    await request("/api/settings", admin, "PUT", {
-      publicTree: false,
-      publicAlbums: true,
-    });
-    publicData = await request("/api/family").then((r) => r.json());
-    const archiveSettings = await request("/api/settings", admin).then((r) =>
-      r.json(),
-    );
-    assert.equal(
-      archiveSettings.reverseTimeline,
-      true,
-      "старый формат обновления видимости не сбрасывает направление времени",
-    );
-    assert.equal(publicData.reverseTimeline, false);
-    assert.equal(publicData.family.people.length, 0);
-    assert.equal((await request("/api/research-resources")).status, 401);
-    assert.equal((await request("/api/people/search?q=Человек")).status, 401);
-    const oldPublicPage = `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(publicOverview.pageToken)}`;
-    assert.equal(
-      (await request(oldPublicPage)).status,
-      409,
-      "страница с прежними правами не выдаётся",
-    );
-    const albumsOverview = await request(
-      "/api/family?projection=overview",
-    ).then((r) => r.json());
-    const albumPage = await request(
-      `/api/family?projection=page&collection=photos&offset=0&token=${encodeURIComponent(albumsOverview.pageToken)}`,
-    ).then((r) => r.json());
-    assert.equal(albumsOverview.totals.people, 0);
-    assert.equal(albumPage.items[0].tags.length, 0);
-    const cache = new DatabaseSync(join(dir, "drevo.sqlite"));
-    cache
-      .prepare("INSERT INTO geocode_cache(query,data,saved_at) VALUES(?,?,?)")
-      .run(
-        "v2:https://photon.komoot.io/api/:https://www.wikidata.org/w/api.php:москва",
-        JSON.stringify({
-          query: "Москва",
-          candidates: [],
-          automatic: { lat: 55, lon: 37, name: "Москва", label: "Москва" },
-        }),
-        Date.now(),
-      );
-    cache.close();
-    assert.equal(
-      (
-        await fetch(
-          base + "/api/places/locate?q=" + encodeURIComponent("Москва"),
-          { headers: { "X-Drevo-Map": "1" } },
-        )
-      ).status,
-      200,
-      "место публичного снимка доступно без древа",
-    );
-    assert.equal(
-      (await request("/api/export.json")).status,
-      401,
-      "public albums do not expose a private tree",
-    );
-    assert.equal(publicData.family.photos[0].tags.length, 0);
-    assert.equal((await request(photo.url)).status, 200);
-    validateFamily(publicData.family);
+
+    assert.equal((await request('/api/settings', admin, 'PUT', {
+      publicTree: false, publicAlbums: true,
+    })).status, 400);
+    assert.equal((await request('/api/settings', admin, 'PUT', {
+      publicTree: false, publicAlbums: false, reverseTimeline: true,
+    })).status, 200);
+    assert.equal((await request('/api/settings', admin).then(r=>r.json())).reverseTimeline, true);
+    // Old restored visibility flags cannot publish an entire archive.
+    await app.archive.db.prepare('UPDATE access_settings SET public_tree=1,public_albums=1').run();
+    for (const path of ['/api/family', '/api/family?projection=overview',
+      '/api/people/search?q=Человек', '/api/research-resources', '/api/export.json', photo.url,
+      photo.url+'?variant=thumb']) assert.equal((await request(path)).status, 401, path);
+    assert.equal((await request('/api/export.json', admin, 'POST', {})).status, 405);
     const latest = await request("/api/family", reader).then((r) => r.json());
     const untitled = await fetch(base + "/api/photos", {
       method: "POST",

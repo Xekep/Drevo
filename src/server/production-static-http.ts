@@ -3,10 +3,9 @@ import { open as openFile } from "node:fs/promises";
 import { dirname, extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { archiveViewAt, invitationAt } from "../domain/archive-routes.ts";
+import { archiveViewAt, invitationAt, discoveryPageAt } from "../domain/archive-routes.ts";
 import { memberPreviewAt } from "../domain/archive-context.ts";
 import { staticAssetsHttp } from "./static-assets-http.ts";
-import { decodePublicPersonId } from "./public-person-id.ts";
 import { notFoundHtml } from "../shared/not-found-page.ts";
 
 const defaultDistDirectory = resolve(
@@ -96,17 +95,9 @@ export function productionStaticHttp(
       );
     const linkedBranch =
       /^\/discover\/linked\/[A-Za-z0-9-]{3,64}\/[a-f0-9-]{36}\/[^/]{1,1200}$/.test(pathname);
-    const discoveryPerson = /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?([^/]{1,1200})$/.exec(pathname);
-    const validDiscoveryPerson = Boolean(discoveryPerson && decodePublicPersonId(discoveryPerson[1]));
-    if (pathname.startsWith("/discover/person/") && !validDiscoveryPerson)
-      return missing();
-    const discovery =
-      pathname === "/discover" ||
-      (/^\/discover\/search\/[^/]{1,1200}$/.test(pathname) &&
-        decoded.slice("/discover/search/".length).length <= 100) ||
-      validDiscoveryPerson ||
-      linkedBranch;
-    const privateView = archiveViewAt(pathname);
+    const discovery = Boolean(discoveryPageAt(pathname, url.search) || linkedBranch);
+    if (pathname.startsWith("/discover") && !discovery) return missing();
+    const privateView = archiveViewAt(pathname, url.search);
     const previewView = memberPreviewAt(pathname);
     const filePath =
       privateView ||

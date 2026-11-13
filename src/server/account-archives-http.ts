@@ -96,7 +96,7 @@ export function accountArchivesHttp(
             client,
             accountId,
             id,
-            "Моё древо",
+            "Семейный архив",
             ARCHIVE_SCHEMA_VERSION,
             { additional },
           );

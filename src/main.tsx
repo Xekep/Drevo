@@ -30,7 +30,7 @@ import "./styles/entry-sequence.css";
 import "./styles/public-people.css";
 import { ArchiveLoading } from "./components/archive-loading";
 import { memberPreviewAt } from "./domain/archive-context.ts";
-import { archiveViewAt, invitationAt } from "./domain/archive-routes.ts";
+import { archiveViewAt, invitationAt, discoveryPageAt } from "./domain/archive-routes.ts";
 import { NotFoundPage } from "./components/not-found-page.tsx";
 import { usePageZoomGuard } from "./hooks/usePageZoomGuard";
 
@@ -99,13 +99,13 @@ function Entry() {
   return sharedToken ? (
     <SharedTree token={sharedToken} />
   ) : join ? (
-    <JoinArchive archiveId={join.archiveId} token={join.token} />
+    <JoinArchive token={join.token} />
   ) : linkedBranch ? (
     <DiscoveryLinkedBranchPerson archiveId={linkedBranch[0]}
       matchId={linkedBranch[1]} personId={linkedBranch[2]} />
-  ) : location.pathname === "/discover" || location.pathname.startsWith("/discover/") ? (
+  ) : discoveryPageAt(location.pathname, location.search) ? (
     <DiscoveryAccess />
-  ) : archiveViewAt(location.pathname) ? (
+  ) : archiveViewAt(location.pathname, location.search) ? (
     <App />
   ) : (
     <NotFoundPage />

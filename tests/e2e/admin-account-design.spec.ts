@@ -209,58 +209,36 @@ test("public access protects Back, then discards the abandoned draft and restore
     exact: true,
   });
   await navigation
-    .getByRole("link", { name: "Общий доступ", exact: true })
+    .getByRole("link", { name: "Настройки древа", exact: true })
     .click();
-  await page.getByLabel("Всё древо по ссылке").check();
+  await page.getByLabel("Название древа", {exact:true}).fill("Несохранённое название");
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.goBack();
-  await expect(page).toHaveURL(/section=shares$/);
-  await expect(page.getByLabel("Всё древо по ссылке")).toBeChecked();
+  await expect(page).toHaveURL(/section=settings$/);
+  await expect(page.getByLabel("Название древа", {exact:true})).toHaveValue("Несохранённое название");
   page.once("dialog", (dialog) => dialog.accept());
   await page.goBack();
   await expect(
     navigation.getByRole("link", { name: "Участники", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await navigation
-    .getByRole("link", { name: "Общий доступ", exact: true })
+    .getByRole("link", { name: "Настройки древа", exact: true })
     .click();
-  await expect(page.getByLabel("Всё древо по ссылке")).not.toBeChecked();
+  await expect(page.getByLabel("Название древа", {exact:true})).not.toHaveValue("Несохранённое название");
   await page.reload();
   await expect(
-    navigation.getByRole("link", { name: "Общий доступ", exact: true }),
+    navigation.getByRole("link", { name: "Настройки древа", exact: true }),
   ).toHaveAttribute("aria-current", "page");
 });
 
-test("settings failure is visible beside usable participants and can be retried", async ({
-  page,
-}) => {
+test("retired public settings are not fetched by tree management", async ({page})=>{
   await identity(page);
-  let fail = true;
-  await page.route("**/api/settings", (route) =>
-    route.fulfill(
-      fail
-        ? { status: 503, json: { error: "Настройки временно недоступны" } }
-        : {
-            json: {
-              publicTree: false,
-              publicAlbums: false,
-              reverseTimeline: false,
-            },
-          },
-    ),
-  );
-  await page.goto("/manage");
-  await expect(
-    page.getByRole("article", { name: `Участник: ${name}`, exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText(
-    "Настройки временно недоступны",
-  );
-  fail = false;
-  await page
-    .getByRole("button", { name: "Повторить загрузку настроек" })
-    .click();
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  let calls=0;
+  await page.route('**/api/settings',route=>{calls++;return route.fulfill({status:503,json:{error:'retired'}});});
+  await page.goto('/manage');
+  await expect(page.getByRole('article',{name:'Участник: '+name,exact:true})).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(calls).toBe(0);
 });
 
 test("account can retry the tree directory and keeps a failed logout on screen", async ({

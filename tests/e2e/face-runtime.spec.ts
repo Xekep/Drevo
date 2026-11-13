@@ -60,7 +60,7 @@ for (const sample of ["blank", "face"] as const)
       ),
     );
     await pagedPhotoFixture(page, [photo]);
-    await page.goto(`/photos/face-runtime-${sample}`);
+    await page.goto(`/photo/face-runtime-${sample}`);
     await page
       .getByRole("group", { name: "Действия с фотографией" })
       .getByRole("button", { name: "Редактировать", exact: true })

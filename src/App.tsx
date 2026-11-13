@@ -26,7 +26,7 @@ import {
   type ArchiveTarget,
 } from "./domain/archive-links";
 import { archiveContextAt, memberPreviewAt, scopedArchivePath } from "./domain/archive-context.ts";
-import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
+import { adminMatchSourcePath, archiveDocumentAt, archiveDocumentPath, archiveAlbumAt, archiveAlbumPath } from "./domain/archive-routes.ts";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -93,12 +93,6 @@ type PersonDraft = {
 };
 const targetKey = (target: ArchiveTarget | null) =>
   target ? `${target.kind}:${target.id}` : "";
-const galleryAlbumPath = (personId: string | null, year: string | null) => {
-  const params = new URLSearchParams();
-  if (personId) params.set("personId", personId);
-  if (year) params.set("year", year);
-  return `/photos${params.size ? `?${params}` : ""}`;
-};
 
 
 export default function App() {
@@ -555,7 +549,7 @@ export default function App() {
   const openPhotoUrl = useCallback(
     (id: string, ids?: string[]) => {
       const request = ++photoNavigationRequest.current;
-      photoReturnPath.current = currentPath.startsWith("/photos?") ? currentPath : "/photos";
+      photoReturnPath.current = currentPath.startsWith("/photos") ? currentPath : "/photos";
       if (!currentFamily()?.photos?.some((photo) => photo.id === id)) {
         void loadDetails({ photos: [id] }).then(() => {
           if (request === photoNavigationRequest.current && currentFamily()?.photos?.some((photo) => photo.id === id)) {
@@ -602,7 +596,7 @@ export default function App() {
   const uploadedPhoto = useCallback(
     (id: string) => {
       const target: ArchiveTarget = { kind: "photo", id };
-      photoReturnPath.current = currentPath.startsWith("/photos?")
+      photoReturnPath.current = currentPath.startsWith("/photos")
         ? currentPath
         : "/photos";
       lastUrlTarget.current = targetKey(target);
@@ -621,15 +615,14 @@ export default function App() {
   const selectGalleryAlbum = useCallback(
     (personId: string | null, year: string | null, replace = false) => {
       lastUrlTarget.current = "";
-      setView("gallery", galleryAlbumPath(personId, year), replace);
+      setView("gallery", archiveAlbumPath(personId, year), replace);
     },
     [setView],
   );
   const selectDocument = useCallback(
     (id: string | null) => {
       const url = new URL(currentPath, window.location.origin);
-      const personId = archiveDocumentAt(url.pathname)?.personId ||
-        url.searchParams.get("personId");
+      const personId = archiveDocumentAt(url.pathname)?.personId || null;
       setView("documents", archiveDocumentPath(personId, id), !id);
     },
     [currentPath, setView],
@@ -642,17 +635,8 @@ export default function App() {
     () => archiveDocumentAt(documentUrl.pathname),
     [documentUrl],
   );
-  const documentPersonFilter = documentRoute?.personId ||
-    documentUrl.searchParams.get("personId");
-  const documentId = documentRoute?.documentId ||
-    documentUrl.searchParams.get("documentId");
-  useEffect(() => {
-    if (!documentRoute ||
-        (!documentUrl.searchParams.has("documentId") &&
-         !documentUrl.searchParams.has("personId"))) return;
-    if (documentId && !/^[a-f0-9-]{36}$/i.test(documentId)) return;
-    setView("documents", archiveDocumentPath(documentPersonFilter, documentId), true);
-  }, [currentPath, documentId, documentPersonFilter, documentRoute, documentUrl, setView]);
+  const documentPersonFilter = documentRoute?.personId || null;
+  const documentId = documentRoute?.documentId || null;
   const chosen = useMemo(
     () => selected.flatMap((id) => (map.has(id) ? [map.get(id)!] : [])),
     [selected, map],
@@ -661,7 +645,8 @@ export default function App() {
   const biographyMapScope = JSON.stringify([archiveContextAt(window.location.pathname)?.id, user?.id, user?.role,
     user?.treeAccess, user?.personId, user?.approved, participantPreview]);
   const chronicleScope = JSON.stringify([biographyMapScope, archive.getRevision(), detailsGeneration, readPhotos, restoredSessionState, currentPath]);
-  const galleryPersonId = view === "gallery" ? new URL(currentPath, window.location.origin).searchParams.get("personId") : null;
+  const galleryUrl = useMemo(() => new URL(currentPath, window.location.origin), [currentPath]);
+  const galleryPersonId = view === "gallery" ? archiveAlbumAt(galleryUrl.pathname) : null;
   const chroniclePersonId = view === "tree" && selected.length === 1 ? selected[0] : galleryPersonId;
   const currentChronicle = readPhotos && chronicle?.scope === chronicleScope &&
     chroniclePersonId === chronicle.personId && map.has(chronicle.personId) ? chronicle : null;
@@ -1444,14 +1429,7 @@ export default function App() {
                   documentId={documentId}
                   documentPage={documentRoute?.pageNumber}
                   onSelectDocument={selectDocument}
-                  personFilter={
-                    view === "gallery"
-                      ? new URL(
-                          currentPath,
-                          window.location.origin,
-                        ).searchParams.get("personId")
-                      : null
-                  }
+                  personFilter={galleryPersonId}
                   yearFilter={
                     view === "gallery"
                       ? new URL(

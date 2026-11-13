@@ -109,7 +109,7 @@ test("TAR restore remaps an award PDF citation and retains original bytes", asyn
   const target = await openArchive(targetPath, empty());
   const restores = restoreStore(target, targetPath);
   const server = createServer((_req, res) => {
-    void fullBackup(source.db, sourcePath, res).catch((error) => {
+    void fullBackup(source.db, res).catch((error) => {
       if (res.headersSent) res.destroy(error as Error);
       else { res.statusCode = 500; res.end(String(error)); }
     });

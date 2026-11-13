@@ -174,113 +174,71 @@ export async function verifyPostgresMediaReadDelivery(
       "completed session and membership revocations must stop originals before the first byte");
     for (const { kind, body } of outcomes)
       assert.notDeepEqual(body, bytes, `${kind} revocation must withhold the original bytes`);
-    await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: true });
-    const publicControl = await fetch(base + url);
-    assert.equal(publicControl.status, 200);
-    assert.deepEqual(Buffer.from(await publicControl.arrayBuffer()), bytes);
-    assert.equal((await fetch(base + portraitUrl)).status, 401,
-      "albums alone do not publish an unrelated tree portrait");
-    assert.equal((await fetch(base + evidenceUrl)).status, 401,
-      "a citation is not a public media grant");
-    for (const kind of ["visibility", "reference"] as const) {
-      const atDelivery = new Promise<void>((resolve) => { deliveryReached = resolve; });
-      deliveryGate = new Promise<void>((resolve) => { deliveryResume = resolve; });
-      pauseDelivery = true;
-      const pending = fetch(base + url);
-      try {
-        await within(Promise.race([atDelivery,
-          pending.then(() => { throw new Error("Public media passed the delivery barrier"); })]),
-        10_000, "Public media delivery barrier missing");
-        if (kind === "visibility")
-          await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
-        else
-          await archive.db.transaction(async () => {
-            await archive.db.prepare("", "DELETE FROM photos WHERE id=?")
-              .run("media-delivery-photo");
-            await archive.db.prepare("", "UPDATE archives SET revision=revision+1 WHERE id=?")
-              .run(archiveId);
-          });
-        deliveryResume();
-        const response = await pending;
-        assert.equal(response.status, kind === "reference" ? 409 : 401,
-          `completed public ${kind} change must withhold the original`);
-        assert.notDeepEqual(Buffer.from(await response.arrayBuffer()), bytes);
-      } finally {
-        pauseDelivery = false;
-        deliveryResume();
-        if (kind === "visibility")
-          await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: true });
-        else
-          await archive.db.transaction(async () => {
-            await archive.db.prepare("", "INSERT INTO photos(id,data) VALUES(?,?::jsonb)")
-              .run("media-delivery-photo", photoData);
-            await archive.db.prepare("", "UPDATE archives SET revision=revision+1 WHERE id=?")
-              .run(archiveId);
-          });
-      }
+    await assert.rejects(visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: true }));
+    await assert.rejects(visibility.write({ ...initialVisibility, publicTree: true, publicAlbums: false }));
+    await client.query(`UPDATE archive_access_settings SET public_tree=true,public_albums=true
+      WHERE archive_id=$1`, [archiveId]);
+    for (const privateUrl of [url, portraitUrl, evidenceUrl]) {
+      const anonymous = await fetch(base + privateUrl);
+      assert.equal(anonymous.status, 401, "imported visibility flags cannot publish originals");
+      assert.notDeepEqual(Buffer.from(await anonymous.arrayBuffer()), bytes);
     }
-    const atLocked = new Promise<void>((resolve) => { lockedReached = resolve; });
-    lockedGate = new Promise<void>((resolve) => { lockedResume = resolve; });
-    pauseLockedDelivery = true;
-    const lockedPending = fetch(base + url);
-    let toggle: Promise<unknown> | undefined;
-    try {
-      await within(atLocked, 10_000, "Public media did not reach locked handoff");
-      let toggled = false;
-      toggle = visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false })
-        .then(() => { toggled = true; });
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      assert.equal(toggled, false,
-        "public visibility toggle must wait until the first original chunk");
-      lockedResume();
-      const response = await lockedPending;
-      assert.equal(response.status, 200);
-      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
-      await within(toggle, 3_000, "Public visibility toggle did not finish after handoff");
-      assert.equal((await fetch(base + url)).status, 401);
-    } finally {
-      pauseLockedDelivery = false;
-      lockedResume();
-      await toggle?.catch(() => {});
-      await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
-    }
-    await visibility.write({ ...initialVisibility, publicTree: true, publicAlbums: false });
-    const portraitControl = await fetch(base + portraitUrl);
-    assert.equal(portraitControl.status, 200,
-      "a public tree serves its portrait without publishing the album");
+    const portraitControl = await fetch(base + portraitUrl,
+      { headers: { Cookie: `drevo_session=${token}` } });
+    assert.equal(portraitControl.status, 200);
     assert.deepEqual(Buffer.from(await portraitControl.arrayBuffer()), bytes);
-    assert.equal((await fetch(base + url)).status, 401,
-      "a gallery-only URL remains private when albums are closed");
-    assert.equal((await fetch(base + evidenceUrl)).status, 401);
-    await archive.db.prepare("", "INSERT INTO photos(id,data) VALUES(?,?::jsonb)")
-      .run("media-delivery-dual", JSON.stringify({ id: "media-delivery-dual",
-        title: "Dual reference", url: portraitUrl, tags: [] }));
-    await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: true });
-    assert.equal((await fetch(base + portraitUrl)).status, 200,
-      "the album independently publishes a dual-reference URL");
-    await visibility.write({ ...initialVisibility, publicTree: true, publicAlbums: false });
-    assert.equal((await fetch(base + portraitUrl)).status, 200,
-      "the tree independently publishes a dual-reference URL");
-    await archive.db.prepare("", "DELETE FROM photos WHERE id=?")
-      .run("media-delivery-dual");
-    const atPortraitDelivery = new Promise<void>((resolve) => { deliveryReached = resolve; });
+    const atDelivery = new Promise<void>((resolve) => { deliveryReached = resolve; });
     deliveryGate = new Promise<void>((resolve) => { deliveryResume = resolve; });
     pauseDelivery = true;
-    const pendingPortrait = fetch(base + portraitUrl);
+    const pendingOriginal = fetch(base + url,
+      { headers: { Cookie: `drevo_session=${token}` } });
     try {
-      await within(Promise.race([atPortraitDelivery,
-        pendingPortrait.then(() => { throw new Error("Portrait passed the delivery barrier"); })]),
-      10_000, "Public portrait delivery barrier missing");
-      await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
+      await within(atDelivery, 10_000, "Original did not reach delivery barrier");
+      await archive.db.transaction(async () => {
+        await archive.db.prepare("", "DELETE FROM photos WHERE id=?").run("media-delivery-photo");
+        await archive.db.prepare("", "UPDATE archives SET revision=revision+1 WHERE id=?").run(archiveId);
+      });
       deliveryResume();
-      const response = await pendingPortrait;
-      assert.equal(response.status, 401,
-        "completed tree-visibility revocation must withhold the portrait");
+      const response = await pendingOriginal;
+      assert.equal(response.status, 409, "a removed reference withholds a prepared original");
       assert.notDeepEqual(Buffer.from(await response.arrayBuffer()), bytes);
     } finally {
       pauseDelivery = false;
       deliveryResume();
-      await visibility.write({ ...initialVisibility, publicTree: false, publicAlbums: false });
+      await archive.db.transaction(async () => {
+        await archive.db.prepare("", "INSERT INTO photos(id,data) VALUES(?,?::jsonb)")
+          .run("media-delivery-photo", photoData);
+        await archive.db.prepare("", "UPDATE archives SET revision=revision+1 WHERE id=?").run(archiveId);
+      });
+    }
+    const atLocked = new Promise<void>((resolve) => { lockedReached = resolve; });
+    lockedGate = new Promise<void>((resolve) => { lockedResume = resolve; });
+    pauseLockedDelivery = true;
+    const lockedPending = fetch(base + url,
+      { headers: { Cookie: `drevo_session=${token}` } });
+    let revoke: Promise<unknown> | undefined;
+    try {
+      await within(atLocked, 10_000, "Original did not reach locked handoff");
+      let revoked = false;
+      revoke = client.query(`UPDATE archive_memberships SET approved=false
+        WHERE archive_id=$1 AND user_id='reader'`, [archiveId])
+        .then(() => { revoked = true; });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(revoked, false, "membership revoke waits for the first original chunk");
+      lockedResume();
+      const response = await lockedPending;
+      assert.equal(response.status, 200);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+      await within(revoke, 3_000, "Membership revoke did not finish after handoff");
+      assert.equal((await fetch(base + url,
+        { headers: { Cookie: `drevo_session=${token}` } })).status, 401);
+    } finally {
+      pauseLockedDelivery = false;
+      lockedResume();
+      await revoke?.catch(() => {});
+      await client.query(`UPDATE archive_memberships SET approved=true
+        WHERE archive_id=$1 AND user_id='reader'`, [archiveId]);
+      await visibility.write(initialVisibility);
     }
     const pendingUrl = "/media/pending-original.jpg";
     await writeFile(join(directory, "pending-original.jpg"), bytes);

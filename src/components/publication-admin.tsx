@@ -19,6 +19,7 @@ type BatchReview = {
 };
 
 export function PublicationAdmin({ family }: { family: Family }) {
+  const [mode, setMode] = useState<"published" | "add">("published");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -35,19 +36,20 @@ export function PublicationAdmin({ family }: { family: Family }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const people = useMemo(() => family.people.filter(publishable)
-    .sort((a, b) => fullName(a).localeCompare(fullName(b), "ru") || a.id.localeCompare(b.id)), [family.people]);
+    .filter(person => mode === "published" ? Boolean(statuses[person.id]) : !statuses[person.id])
+    .sort((a, b) => fullName(a).localeCompare(fullName(b), "ru") || a.id.localeCompare(b.id)), [family.people, statuses, mode]);
   const filtered = useMemo(() => {
     const term = query.trim().toLocaleLowerCase("ru-RU");
     return term ? people.filter((person) =>
       `${fullName(person)} ${person.maidenName || ""}`.toLocaleLowerCase("ru-RU").includes(term)) : people;
   }, [people, query]);
-  const pagePeople = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+  const activePage = Math.min(page, Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1));
+  const pagePeople = filtered.slice(activePage * PAGE_SIZE, (activePage + 1) * PAGE_SIZE);
+  const peopleById = useMemo(() => new Map(family.people.filter(publishable).map((person) => [person.id, person])), [family.people]);
   const chosen = [...selected].map((id) => peopleById.get(id)).filter((person): person is Person => Boolean(person));
   const pageIds = pagePeople.map((person) => person.id);
-  const pageKey = pageIds.join("\0");
-  const statusKey = `${reload}:${pageKey}`;
-  const statusesReady = !pageKey || loadedStatusKey === statusKey;
+  const statusKey = String(reload);
+  const statusesReady = loadedStatusKey === statusKey;
   const statusFor = (id: string) => !statusesReady
     ? failedStatusKey === statusKey ? "Не удалось проверить" : "Проверяем…"
     : statuses[id] ? "Можно найти" : "Скрыт";
@@ -66,19 +68,13 @@ export function PublicationAdmin({ family }: { family: Family }) {
   }, []);
 
   useEffect(() => {
-    if (!pageKey) return;
     const controller = new AbortController();
-    const params = new URLSearchParams();
-    pageKey.split("\0").forEach((id) => params.append("id", id));
-    archiveFetch(`${endpoint}?${params}`, { signal: controller.signal, cache: "no-store" })
+    archiveFetch(`${endpoint}?published=1`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         const body = await response.json();
+        if (controller.signal.aborted) return;
         if (!response.ok) throw new Error(body.error || "Не удалось загрузить публикации");
-        setStatuses((current) => {
-          const next = { ...current };
-          pageKey.split("\0").forEach((id) => delete next[id]);
-          return { ...next, ...body.fields };
-        });
+        setStatuses(body.fields);
         setLoadedStatusKey(statusKey);
         setFailedStatusKey("");
       })
@@ -89,7 +85,7 @@ export function PublicationAdmin({ family }: { family: Family }) {
         }
       });
     return () => controller.abort();
-  }, [pageKey, reload, statusKey]);
+  }, [family, reload, statusKey]);
 
   function select(id: string, checked: boolean) {
     setSelected((current) => {
@@ -152,6 +148,8 @@ export function PublicationAdmin({ family }: { family: Family }) {
         return next;
       });
       setSelected(new Set());
+      setMode("published");
+      setPage(0);
       setConfirm(null);
       setReview(null);
       setReload((value) => value + 1);
@@ -171,14 +169,18 @@ export function PublicationAdmin({ family }: { family: Family }) {
     { key: "deathPlace", label: "Место смерти" },
   ] as const;
   return <section className="admin-card archive-form publication-admin">
-    <p>В общий поиск попадают только подтверждённо умершие люди, которых вы выберете. Фото, связи, документы и точные даты останутся закрытыми.</p>
+    <div className="publication-admin-toolbar">
+      <p>{mode === "published" ? "Здесь только люди, которых уже можно найти в общем поиске Drevo."
+        : "Выберите подтверждённо умерших людей для добавления в поиск. Фото, связи и документы остаются закрытыми."}</p>
+      <button type="button" disabled={busy} onClick={() => {
+        setMode(mode === "published" ? "add" : "published"); setPage(0); setQuery("");
+        setSelected(new Set()); setConfirm(null); setReview(null); reviewRequest.current += 1;
+      }}>{mode === "published" ? "Добавить в поиск" : "К опубликованным"}</button>
+    </div>
     <label>Найти человека
       <input type="search" value={query} onChange={(event) => {
         setQuery(event.target.value);
         setPage(0);
-        setLoadedStatusKey("");
-        setFailedStatusKey("");
-        setReload((value) => value + 1);
       }} placeholder="ФИО или фамилия при рождении" />
     </label>
     <div className="publication-admin-toolbar">
@@ -190,19 +192,20 @@ export function PublicationAdmin({ family }: { family: Family }) {
       <button type="button" disabled={busy || !chosen.length} onClick={() => { setSelected(new Set()); setConfirm(null); setReview(null); reviewRequest.current += 1; }}>Сбросить</button>
       {failedStatusKey === statusKey && <button type="button" onClick={() => setReload((value) => value + 1)}>Повторить проверку</button>}
     </div>
-    <div className="publication-admin-list" aria-label="Люди для публикации">
+    {!statusesReady && failedStatusKey !== statusKey && <p role="status">Загружаем публикации…</p>}
+    <div className="publication-admin-list" aria-label={mode === "published" ? "Опубликованные люди" : "Люди для публикации"}>
       {pagePeople.map((person) => <label key={person.id} className="publication-admin-row">
         <input type="checkbox" checked={selected.has(person.id)} disabled={busy || !statusesReady || (!selected.has(person.id) && chosen.length >= 50)}
           onChange={(event) => select(person.id, event.target.checked)} />
         <span><strong>{fullName(person)}</strong><small>{[year(person.birth), year(person.death)].filter(Boolean).join("–") || "Годы не указаны"}</small></span>
         <span className="publication-admin-state">{statusFor(person.id)}</span>
       </label>)}
-      {!pagePeople.length && <p>Подходящих людей нет.</p>}
+      {statusesReady && !pagePeople.length && <p>{mode === "published" && !query.trim() ? "Опубликованных людей пока нет." : "Подходящих людей нет."}</p>}
     </div>
     {filtered.length > PAGE_SIZE && <nav className="publication-admin-pages" aria-label="Страницы людей">
-      <button type="button" disabled={page === 0} onClick={() => { setPage(page - 1); setLoadedStatusKey(""); setFailedStatusKey(""); }}>Назад</button>
-      <span>Страница {page + 1} из {Math.ceil(filtered.length / PAGE_SIZE)}</span>
-      <button type="button" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => { setPage(page + 1); setLoadedStatusKey(""); setFailedStatusKey(""); }}>Далее</button>
+      <button type="button" disabled={activePage === 0} onClick={() => setPage(activePage - 1)}>Назад</button>
+      <span>Страница {activePage + 1} из {Math.ceil(filtered.length / PAGE_SIZE)}</span>
+      <button type="button" disabled={(activePage + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(activePage + 1)}>Далее</button>
     </nav>}
     {chosen.length > 0 && <fieldset className="publication-admin-fields"><legend>Какие поля открыть при публикации</legend>
         <p>ФИО публикуется обязательно. Отсутствующее у человека значение не появится в поиске позднее без нового разрешения.</p>
@@ -214,8 +217,8 @@ export function PublicationAdmin({ family }: { family: Family }) {
         </label>)}
     </fieldset>}
     {chosen.length > 0 && <div className="publication-admin-actions">
-      <button type="button" disabled={busy || !statusesReady} onClick={() => void openReview("publish")}>Опубликовать выбранных</button>
-      <button type="button" disabled={busy || !statusesReady} onClick={() => void openReview("unpublish")}>Снять выбранных с поиска</button>
+      <button type="button" disabled={busy || !statusesReady} onClick={() => void openReview("publish")}>{mode === "published" ? "Изменить публикацию" : "Опубликовать выбранных"}</button>
+      {mode === "published" && <button type="button" disabled={busy || !statusesReady} onClick={() => void openReview("unpublish")}>Снять выбранных с поиска</button>}
     </div>}
     {confirm && validReview && <section className="publication-admin-confirm" aria-label="Проверка публикации">
       <h2>{confirm === "publish" ? "Проверьте публикацию" : "Проверьте отзыв публикации"}</h2>

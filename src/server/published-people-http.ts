@@ -257,6 +257,12 @@ export function publishedPeopleHttp({
     }
     if (batch) {
       if (req.method === "GET") {
+        if (url.searchParams.get("published") === "1") {
+          if (url.searchParams.has("id")) return json(res, 400, { error: "Выберите один способ чтения публикаций" });
+          const value = async () => ({ fields: Object.fromEntries(await store.entries()) });
+          if (archive.db.kind === "postgres") return deliverOwnerPublication(req, res, user.id, value);
+          return json(res, 200, await value());
+        }
         const ids = batchIds(url.searchParams.getAll("id"));
         if (!ids) return json(res, 400, { error: "Укажите от 1 до 50 людей" });
         if (archive.db.kind === "postgres")

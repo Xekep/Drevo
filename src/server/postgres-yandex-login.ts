@@ -98,7 +98,7 @@ export async function completePostgresOAuthLoginInTransaction(
           client,
           accountId,
           archiveId,
-          "Моё древо",
+          "Семейный архив",
           ARCHIVE_SCHEMA_VERSION,
         );
       })();

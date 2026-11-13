@@ -5,7 +5,7 @@ test("photo drag covers the viewport and accepts a drop outside the gallery cont
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/photos");
-  await expect(page.locator(".gallery-view .primary-action")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Добавить фото", exact: true })).toBeVisible();
 
   const dragOnHeader = async (kind: "dragenter" | "drop") => {
     await page.locator(".archive-header").evaluate((header, eventKind) => {
