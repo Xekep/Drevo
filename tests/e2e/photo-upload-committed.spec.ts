@@ -16,7 +16,7 @@ for (const marker of ["accessChanged", "refreshRequired"] as const) {
       return route.fulfill({ status: 201, json: { committed: true, [marker]: true } });
     });
     await page.goto("/photos");
-    await page.locator(".gallery-view .primary-action").click();
+    await page.getByRole("button", { name: "Добавить фото", exact: true }).click();
     const form = page.locator(".photo-upload-dialog");
     await expect(form).toBeVisible();
     await form.locator('input[type="file"]').setInputFiles({
@@ -27,7 +27,7 @@ for (const marker of ["accessChanged", "refreshRequired"] as const) {
     const savedMessage = /Фотография сохранена, но (доступ изменился|архив изменился)/;
     if (marker === "accessChanged") {
       await expect(page.getByRole("status").filter({ hasText: savedMessage })).toBeVisible();
-      await expect(page.locator(".gallery-view .primary-action")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Добавить фото", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Закрыть уведомление" }).click();
       await expect(page.getByRole("status").filter({ hasText: savedMessage })).toHaveCount(0);
     } else {
@@ -35,7 +35,7 @@ for (const marker of ["accessChanged", "refreshRequired"] as const) {
       await expect(form).toBeVisible();
       page.once("dialog", (dialog) => dialog.accept());
       await form.locator("footer .text-action").click();
-      await expect(page.locator(".gallery-view .primary-action")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Добавить фото", exact: true })).toBeVisible();
     }
     await expect(page.locator(".photo-viewer")).toHaveCount(0);
     expect(posts).toBe(1);

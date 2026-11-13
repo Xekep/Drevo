@@ -56,6 +56,9 @@ test("PDF без привязки остаётся в общем каталог�
   const documentUrl = page.url();
   const documentId = new URL(documentUrl).pathname.split("/").at(-1);
   await page.goto(`/documents?documentId=${documentId}`);
+  await expect(page.getByRole("heading", { name: "Здесь пока нет ветви" })).toBeVisible();
+  await expect(reader).toHaveCount(0);
+  await page.goto(documentUrl);
   await expect(page).toHaveURL(documentUrl);
   await expect(reader).toBeVisible();
   await page.reload();

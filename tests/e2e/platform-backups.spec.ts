@@ -71,6 +71,11 @@ async function managedTree(page: Page, globalRole: "admin" | "researcher" | null
   await page.route("**/api/backups**", (route) => {
     const path = new URL(route.request().url()).pathname;
     paths.push(route.request().method() + " " + path);
+    if (route.request().method() === "PUT" && path.endsWith("/settings")) {
+      expect(route.request().postDataJSON()).toEqual({ keepCount: 3 });
+      status.settings.keepCount = route.request().postDataJSON().keepCount;
+      return route.fulfill({ json: status.settings });
+    }
     if (path.endsWith("/create")) status.job = {
       id: "created", kind: "create", state: "succeeded", startedAt: "2026-10-06T00:00:00Z",
     };
@@ -111,7 +116,12 @@ for (const example of [
   }
   await tab.click();
   await expect(page.getByRole("button", { name: "Создать копию", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Количество копий")).toHaveCount(0);
+  await expect(page.getByLabel("Количество копий")).toHaveValue("5");
+  await page.getByLabel("Количество копий").fill("3");
+  await page.getByRole("button", { name: "Сохранить лимит", exact: true }).click();
+  await expect.poll(() => paths).toContain("PUT /a/tree-a/api/backups/settings");
+  await expect(page.getByLabel("Количество копий")).toHaveValue("3");
+  await expect(page.getByRole("button", { name: "Создать копию", exact: true })).toBeEnabled();
   await expect(page.getByRole("heading", { name: "Автоматические копии" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Скачать копию от/ })).toHaveAttribute("href",
     "/a/tree-a/api/backups/11111111-1111-4111-8111-111111111111/download");
