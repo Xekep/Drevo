@@ -442,6 +442,10 @@ test("exhausting optional optimization cannot suppress a mandatory route through
   );
   verifyRoutes(positions, routes);
   assert.equal(searchBudget.remaining, 0);
+  assert.deepEqual(routeRelationships(
+    people, [link], positions, TREE_NODE_WIDTH, TREE_NODE_HEIGHT, new Set(), [],
+    new Map([[routeKey(link), { searchBudget, optional: true }]]),
+  ), [], "a speculative repair cannot bypass its exhausted search budget");
 });
 
 test("additional relation can use a diagonal without crossing cards", () => {

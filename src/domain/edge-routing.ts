@@ -16,6 +16,8 @@ export type RouteHint = {
   targetHandle?: Handle;
   middle?: number;
   searchBudget?: { remaining: number };
+  /** A speculative route may fail instead of using the mandatory unbudgeted fallback. */
+  optional?: boolean;
 };
 export type Box = { left: number; right: number; top: number; bottom: number };
 type Line = { a: Point; b: Point; group: string };
@@ -376,7 +378,7 @@ export function routeRelationships(
         clear,
         (a, b) => cost(a, b, group),
         guides,
-        best ? hint?.searchBudget : undefined,
+        best || hint?.optional ? hint?.searchBudget : undefined,
       );
       if (found) {
         const value = found
@@ -399,7 +401,8 @@ export function routeRelationships(
         top: Math.min(s.y, t.y) - 800,
         bottom: Math.max(s.y, t.y) + 800,
       });
-      best = corridorSearch(s, t, expanded, clear, (a, b) => cost(a, b, group));
+      best = corridorSearch(s, t, expanded, clear, (a, b) => cost(a, b, group), [],
+        hint?.optional ? hint.searchBudget : undefined);
     }
     if (!best) continue;
     const points = simplifyRoute([start, ...best, end]);

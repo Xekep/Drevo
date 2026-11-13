@@ -23,6 +23,7 @@ import { shortenFamilyRows } from "./family-row-shortening.ts";
 import { finishColdFamilyLayout, preferColdFamilyLayout, preferJointUnionLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
 import { JOINT_UNION_LAYOUT_ID, jointUnionOrder } from "./joint-union-order.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
+import { repairAdditionalRoutes } from "./additional-route-repair.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -1245,7 +1246,7 @@ export async function unionGeometry(
     // before bundling can reject a safe old position after cold centering.
     best = optimizeFamilyRows(best, people, links, size, finalScore, previous);
     best = repairFamilyRoutes(best, size, finalScore).geometry;
-    return bundleFamilyBranches(best);
+    return repairAdditionalRoutes(bundleFamilyBranches(best), links, size);
   }
   const finish = (geometry: TreeGeometry) => {
     let result = finishColdFamilyLayout(geometry, people, links, size, finalScore);
@@ -1313,11 +1314,12 @@ export async function unionGeometry(
         if (Math.max(nextExtent.width, nextExtent.height) <=
           Math.max(oldExtent.width, oldExtent.height) * 1.4 &&
           nextExtent.width * nextExtent.height <= oldExtent.width * oldExtent.height * 1.5 &&
-          preferJointUnionLayout(candidate, complete, size, finalScore)) return candidate;
+          preferJointUnionLayout(candidate, complete, size, finalScore))
+          return repairAdditionalRoutes(candidate, links, size);
       }
     } catch {
       // A failed model or speculative placement cannot discard the complete baseline.
     }
   }
-  return complete;
+  return repairAdditionalRoutes(complete, links, size);
 }
