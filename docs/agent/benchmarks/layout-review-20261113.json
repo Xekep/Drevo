@@ -7,17 +7,76 @@
     "height": 264
   },
   "summary": {
-    "comparisons": 32,
-    "unchanged": 26,
-    "improved": 6,
-    "regressed": 0
+    "coldComparisons": 34,
+    "coldUnchanged": 28,
+    "coldImproved": 6,
+    "coldRegressed": 0
   },
   "notes": [
     "Comparison uses actual main source, not a mock baseline.",
     "Only full private-archive timings were measured as a dedicated pair; all other timings are omitted.",
-    "Two requested blood-and-partner projections have byte-identical layout inputs and cache keys.",
-    "Full-to-projection transition matches cold geometry for main and proposed in both directions.",
+    "Correction: the earlier script accidentally selected anchor A for both requested projections. The distinct inputs have 256 and 187 people.",
+    "Projection A full-to-filter transition discards bulk history and matches cold geometry in both versions.",
+    "Projection B previously inherited the full-tree slots on a cache miss: main 2/7 crossings, proposed 3/10. After the UI fix it uses the canonical cold result, 2/9, exactly as a cached/server result. This is not byte parity with the former main history fallback.",
     "No private names, identifiers, coordinates or topology are included."
+  ],
+  "transitions": [
+    {
+      "fixture": "private-projection-b",
+      "reverse": false,
+      "mainBeforeProjectionFix": {
+        "primaryCrossings": 2,
+        "allCrossings": 7,
+        "allContacts": 17,
+        "allLength": 132812,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "proposedBeforeProjectionFix": {
+        "primaryCrossings": 3,
+        "allCrossings": 10,
+        "allContacts": 20,
+        "allLength": 132676.5,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "canonicalAfterFix": {
+        "primaryCrossings": 2,
+        "allCrossings": 9,
+        "allContacts": 18,
+        "allLength": 136058,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    },
+    {
+      "fixture": "private-projection-b",
+      "reverse": true,
+      "mainBeforeProjectionFix": {
+        "primaryCrossings": 2,
+        "allCrossings": 7,
+        "allContacts": 17,
+        "allLength": 132812,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "proposedBeforeProjectionFix": {
+        "primaryCrossings": 3,
+        "allCrossings": 10,
+        "allContacts": 20,
+        "allLength": 132676.5,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "canonicalAfterFix": {
+        "primaryCrossings": 2,
+        "allCrossings": 9,
+        "allContacts": 18,
+        "allLength": 136058,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    }
   ],
   "cases": [
     {
@@ -1435,7 +1494,7 @@
       }
     },
     {
-      "fixture": "private-projection",
+      "fixture": "private-projection-a",
       "reverse": false,
       "sameGeometry": true,
       "main": {
@@ -1482,7 +1541,7 @@
       }
     },
     {
-      "fixture": "private-projection",
+      "fixture": "private-projection-a",
       "reverse": true,
       "sameGeometry": true,
       "main": {
@@ -1526,6 +1585,100 @@
           "lineageSpan": 630
         },
         "elkCalls": 16
+      }
+    },
+    {
+      "fixture": "private-projection-b",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 187,
+        "primaryRelations": 304,
+        "primaryCrossings": 2,
+        "allCrossings": 9,
+        "allContacts": 18,
+        "allLength": 136058,
+        "width": 15031,
+        "height": 5644,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 12535.5,
+          "single": 5442,
+          "maxOffset": 2735,
+          "interleavings": 4,
+          "lineageDrift": 294,
+          "lineageSpan": 630
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 187,
+        "primaryRelations": 304,
+        "primaryCrossings": 2,
+        "allCrossings": 9,
+        "allContacts": 18,
+        "allLength": 136058,
+        "width": 15031,
+        "height": 5644,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 12535.5,
+          "single": 5442,
+          "maxOffset": 2735,
+          "interleavings": 4,
+          "lineageDrift": 294,
+          "lineageSpan": 630
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "private-projection-b",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 187,
+        "primaryRelations": 304,
+        "primaryCrossings": 2,
+        "allCrossings": 9,
+        "allContacts": 18,
+        "allLength": 136058,
+        "width": 15031,
+        "height": 5644,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 12535.5,
+          "single": 5442,
+          "maxOffset": 2735,
+          "interleavings": 4,
+          "lineageDrift": 294,
+          "lineageSpan": 630
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 187,
+        "primaryRelations": 304,
+        "primaryCrossings": 2,
+        "allCrossings": 9,
+        "allContacts": 18,
+        "allLength": 136058,
+        "width": 15031,
+        "height": 5644,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 12535.5,
+          "single": 5442,
+          "maxOffset": 2735,
+          "interleavings": 4,
+          "lineageDrift": 294,
+          "lineageSpan": 630
+        },
+        "elkCalls": 8
       }
     }
   ]
