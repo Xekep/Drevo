@@ -475,7 +475,7 @@ test("a real full TAR backup restores discussion attachment originals on opt-in"
   const originalId = "a5ac420a-5ed9-44ee-a307-8550f6b64708";
   const original = Buffer.from("A discussion attachment from the real backup producer");
   const server = createServer((_req, res) => {
-    void fullBackup(source.db, sourcePath, res).catch((error) => {
+    void fullBackup(source.db, res).catch((error) => {
       if (res.headersSent) res.destroy(error as Error);
       else { res.statusCode = 500; res.end(String(error)); }
     });

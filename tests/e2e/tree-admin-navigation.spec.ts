@@ -118,14 +118,10 @@ test("tree owner reaches scoped management from the avatar menu, and old scoped 
     }
   }
   await expect(page.getByRole("link", { name: "Админка платформы" })).toHaveCount(0);
-  await page.goto("/a/tree-a/admin?section=storage");
-  await expect(page).toHaveURL(/\/a\/tree-a\/manage$/);
-  await expect(page.getByRole("heading", { name: "Участники", exact: true })).toBeVisible();
-  await page.goto("/a/tree-a/admin/matches");
-  await expect(page).toHaveURL(/\/a\/tree-a\/manage\/matches$/);
-  await page.goto("/admin/matches");
-  await expect(page).toHaveURL(/\/manage\/matches$/);
-  await expect(page.getByRole("heading", { name: "Связи древ" })).toBeVisible();
+  for (const path of ["/a/tree-a/admin?section=storage", "/a/tree-a/admin/matches", "/admin/matches"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: "Здесь пока нет ветви" })).toBeVisible();
+  }
 });
 
 test("gear opens only owner management; full tier does not grant platform settings", async ({ page }) => {

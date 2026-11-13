@@ -409,15 +409,15 @@ test("named photo albums open only their own chronicle and retain the album on c
   await setup(page);
   await page.goto("/photos");
   await expect(page.getByRole("button", { name: "Хроника", exact: true })).toHaveCount(0);
-  await page.locator('.photo-albums a[href*="personId=e2e-child"]').click();
+  await page.locator('.photo-albums a[href$="/photos/e2e-child"]').click();
   await launchChronicle(page);
   const dialog = page.getByRole("dialog", { name: "Семейная хроника", exact: true });
   await expect(dialog.getByLabel("Номер снимка")).toHaveText("1 / 3");
   await expect(dialog.locator(".chronicle-caption-summary")).toContainText("1950");
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(page).toHaveURL(/\/photos\?personId=e2e-child$/);
+  await expect(page).toHaveURL(/\/photos\/e2e-child$/);
   await expect(page.locator(".gallery-view")).toBeVisible();
-  await page.goto("/photos?personId=e2e-spouse");
+  await page.goto("/photos/e2e-spouse");
   await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Хроника", exact: true })).toHaveCount(0);
 });
@@ -505,7 +505,7 @@ for (const count of [0, 1, 2]) {
     await page.goto("/people/e2e-child");
     await expect(page.getByRole("button", { name: "Открыть фотоальбом человека: " + count + " фото" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Хроника", exact: true, includeHidden: true })).toHaveCount(count > 1 ? 1 : 0);
-    await page.goto("/photos?personId=e2e-child");
+    await page.goto("/photos/e2e-child");
     await expect(page.locator(".gallery-view")).toBeVisible();
     await expect(page.getByRole("button", { name: "Хроника", exact: true, includeHidden: true })).toHaveCount(count > 1 ? 1 : 0);
   });

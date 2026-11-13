@@ -354,7 +354,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     clearFanReturn();
     clearNavigation();
   }, [focus, setFanAnchor, clearFanReturn, clearNavigation]);
-  const [growing, setGrowing] = useState(() => !props.skipInitialGrowth && props.animateOnLoad !== false && props.presentation !== "depth");
+  const [growing, setGrowing] = useState(() => family.people.length > 0 && !props.skipInitialGrowth && props.animateOnLoad !== false && props.presentation !== "depth");
   useEffect(() => {
     if (!activeFanAnchor || !fanRevealing) return;
     const element = container.current;
@@ -811,7 +811,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     } : null
     : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus, focus?.wholeTree, props.generationLimits]);
   useEffect(() => {
-    if (problem) {
+    if (problem || (ready && !nodes.length)) {
       const timer = window.setTimeout(() => setGrowing(false), 0);
       return () => window.clearTimeout(timer);
     }

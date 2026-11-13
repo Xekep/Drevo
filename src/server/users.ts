@@ -316,18 +316,6 @@ export async function userStore(
         );
       if (isArchiveOwner(target) && treeAccess !== "all")
         throw new Error("Администратору нужен доступ ко всему древу");
-      if (treeAccess === "common_ancestors") {
-        const publicAccess = await db
-          .prepare(
-            "SELECT public_tree,public_albums FROM access_settings WHERE id=1",
-            "SELECT public_tree,public_albums FROM runtime_access_settings WHERE id=1",
-          )
-          .get();
-        if (publicAccess?.public_tree || publicAccess?.public_albums)
-          throw new Error(
-            "Для ограниченного доступа сначала закройте публичное древо и альбомы",
-          );
-      }
       await db
         .prepare(
           "UPDATE users SET person_id=?,tree_access=? WHERE id=?",

@@ -1,6 +1,6 @@
 import { memberPreviewTarget } from "./member-preview-access.ts";
 import { lockBackupStaff } from "./tree-backup-access.ts";
-import { BackupInputError, validateBackupSettings } from "./backup-store.ts";
+import { BackupInputError, validateBackupSettings, validateTreeBackupSettings } from "./backup-store.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { open } from "node:fs/promises";
@@ -88,7 +88,7 @@ export function backupManagementHttp({
     )
       return json(res, 403, { error: "Откройте резервные копии в управлении древом." });
     try {
-      if (backups.treeOnly && (path.endsWith("/settings") || path.endsWith("/check")))
+      if (backups.treeOnly && path.endsWith("/check"))
         return json(res, 403, { error: "Расписание и хранилище настраиваются только для платформы." });
       if ((path === "/api/backups" || path === "/api/backups/") && req.method === "GET") {
         const offset = Number(url.searchParams.get("offset") || 0);
@@ -136,7 +136,7 @@ export function backupManagementHttp({
         if ((!canManageTreeBackups(await auth.currentUser(req)) || !!memberPreviewTarget(req)))
           return json(res, 403, { error: "Доступ к резервным копиям древа отозван." });
         if (!auth.local && db.kind === "postgres" && db.postgresTransaction) {
-          const checked = validateBackupSettings(body);
+          const checked = backups.treeOnly ? validateTreeBackupSettings(body) : validateBackupSettings(body);
           const session = await auth.accountSession(req);
           if (!session)
             return json(res, 401, { error: "Доступ к резервным копиям древа отозван." });
@@ -168,7 +168,7 @@ export function backupManagementHttp({
             if (!membership.rows[0]?.approved || !platformGrant || !owner.rowCount)
               return { status: 403 as const };
             return { status: 200 as const,
-              settings: await backups.savePostgres(checked, actor, client) };
+              settings: await backups.savePostgres(backups.treeOnly ? { keepCount: checked.keepCount } : checked, actor, client) };
           });
           return json(res, result.status,
             result.status === 200 ? result.settings : { error: "Доступ к резервным копиям древа отозван." });
@@ -210,6 +210,17 @@ export function backupManagementHttp({
           202,
           await backups.startCreate((await auth.currentUser(req))!, false, session || undefined),
         );
+      }
+      const deletion = /^\/api\/backups\/([a-f0-9-]{36})$/.exec(path);
+      if (deletion && req.method === "DELETE") {
+        if (!backups.treeOnly) return json(res, 403, { error: "Удаление доступно для копий древа." });
+        if (downloading) throw new BackupBusyError("Дождитесь скачивания резервной копии.");
+        const current = await auth.currentUser(req);
+        if (!canManageTreeBackups(current) || !!memberPreviewTarget(req))
+          throw new BackupAccessError(403);
+        const session = !auth.local && db.kind === "postgres" ? await auth.accountSession(req) : undefined;
+        if (!auth.local && db.kind === "postgres" && !session) throw new BackupAccessError(401);
+        return json(res, 202, await backups.remove(deletion[1], current, session || undefined));
       }
       const match = path.match(
         /^\/api\/backups\/([a-f0-9-]{36})\/(preview|download)$/,

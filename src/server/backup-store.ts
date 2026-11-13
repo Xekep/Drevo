@@ -19,6 +19,14 @@ const defaults: BackupSettings = {
 
 export class BackupInputError extends Error {}
 
+export function validateTreeBackupSettings(value: unknown): BackupSettings {
+  const v = value as Record<string, unknown> | null;
+  if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).some(key => key !== "keepCount") ||
+      !Number.isInteger(v.keepCount) || Number(v.keepCount) < 1 || Number(v.keepCount) > 365)
+    throw new BackupInputError("Укажите количество копий от 1 до 365.");
+  return { ...defaults, enabled: false, keepCount: Number(v.keepCount) };
+}
+
 export function validateBackupSettings(value: unknown): BackupSettings {
   const v = value as BackupSettings;
   if (
@@ -78,23 +86,27 @@ export async function backupStore(
         "SELECT data,next_run FROM backup_settings WHERE id=1",
       )
       .get())!;
+    const stored = JSON.parse(String(row.data)) as BackupSettings & { treeKeepCount?: number };
     return {
       value: treeOnly
-        ? { ...defaults, enabled: false, keepCount: 5 }
-        : (JSON.parse(String(row.data)) as BackupSettings),
+        ? { ...defaults, enabled: false, keepCount: Number.isInteger(stored.treeKeepCount) &&
+            stored.treeKeepCount! >= 1 && stored.treeKeepCount! <= 365 ? stored.treeKeepCount! : 5 }
+        : stored,
       next: Number(row.next_run),
     };
   }
   async function save(value: unknown, actor: ArchiveUser) {
-    const checked = validateBackupSettings(value),
+    const checked = treeOnly ? validateTreeBackupSettings(value) : validateBackupSettings(value),
       old = await settings();
-    const next = nextRun(checked, old.value, old.next);
+    const next = treeOnly ? old.next : nextRun(checked, old.value, old.next);
+    const row = treeOnly ? await db.prepare("SELECT data FROM backup_settings WHERE id=1").get() : null;
+    const stored = treeOnly ? { ...JSON.parse(String(row!.data)), treeKeepCount: checked.keepCount } : checked;
     await db
       .prepare(
         "UPDATE backup_settings SET data=?,next_run=? WHERE id=1",
         "UPDATE backup_settings SET data=?,next_run=? WHERE id=1",
       )
-      .run(JSON.stringify(checked), next);
+      .run(JSON.stringify(stored), next);
     await audit.record(settingAudit(old.value, checked), actor);
     return checked;
   }
@@ -133,7 +145,7 @@ export async function backupStore(
     client: pg.PoolClient,
   ) {
     if (db.kind !== "postgres") throw new Error("PostgreSQL is required");
-    const checked = validateBackupSettings(value);
+    const checked = treeOnly ? validateTreeBackupSettings(value) : validateBackupSettings(value);
     const previous = await client.query<{ data: string; next_run: string }>(
       `SELECT data,next_run FROM backup_settings
        WHERE archive_id=$1 AND id=1 FOR UPDATE NOWAIT`,
@@ -141,10 +153,11 @@ export async function backupStore(
     );
     if (!previous.rows[0]) throw new Error("Backup settings are unavailable");
     const old = JSON.parse(String(previous.rows[0].data)) as BackupSettings;
-    const next = nextRun(checked, old, Number(previous.rows[0].next_run));
+    const next = treeOnly ? Number(previous.rows[0].next_run) : nextRun(checked, old, Number(previous.rows[0].next_run));
+    const stored = treeOnly ? { ...old, treeKeepCount: checked.keepCount } : checked;
     await client.query(
       "UPDATE backup_settings SET data=$1,next_run=$2 WHERE archive_id=$3 AND id=1",
-      [JSON.stringify(checked), next, db.archiveId],
+      [JSON.stringify(stored), next, db.archiveId],
     );
     const draft = settingAudit(old, checked);
     await client.query(
@@ -190,7 +203,7 @@ export async function backupStore(
       )
       .run(item.id, item.name, item.createdAt, JSON.stringify(item));
   }
-  async function excess(config: BackupSettings) {
+  async function excess(config: BackupSettings, createdId: string) {
     return (
       await db
         .prepare(
@@ -208,6 +221,8 @@ export async function backupStore(
             (item.remoteHost === config.remoteHost &&
               item.remoteDirectory === config.remoteDirectory)),
       )
+      // Never rotate the copy just created, even if clocks moved backwards.
+      .sort((a, b) => a.id === createdId ? -1 : b.id === createdId ? 1 : 0)
       .slice(config.keepCount);
   }
   return {

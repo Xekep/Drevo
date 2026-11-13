@@ -19,6 +19,7 @@ import {
   Eye,
   DatabaseBackup,
   Check,
+  Settings2,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -49,10 +50,7 @@ import {
   memberPreviewPath,
   scopedArchivePath,
 } from "../domain/archive-context";
-import {
-  PublicTreeSettings,
-  type PublicTreeSettingsValue as Settings,
-} from "./public-tree-settings";
+import { ArchiveSettingsForm } from "./archive-settings";
 type UserPatch = {
   role?: Role;
   approved?: boolean;
@@ -63,6 +61,7 @@ type UserPatch = {
 type UsersPage = { users: ArchiveUser[]; next: string | null; total: number };
 const USERS_PAGE_SIZE = 20;
 const ADMIN_SECTIONS = [
+  { label: "Древо", items: [{ id: "settings", label: "Настройки древа", icon: Settings2 }] },
   {
     label: "Доступ",
     items: [
@@ -90,9 +89,10 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
+  settings: { title: "Настройки древа", description: "Название и описание семейного архива." },
   backups: {
     title: "Резервные копии древа",
-    description: "Ручные копии этого архива. Сохраняются пять последних.",
+    description: "Ручные копии этого архива, удаление и количество сохраняемых копий.",
   },
   users: {
     title: "Участники",
@@ -112,7 +112,7 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   },
   shares: {
     title: "Общий доступ",
-    description: "Публичный просмотр и временные ссылки на семейные ветви.",
+    description: "Временные ссылки с выбранным составом людей и сроком действия.",
   },
   publications: {
     title: "Можно найти в Drevo",
@@ -362,7 +362,7 @@ export function AdminPanel({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const section =
-    [adminMatchesPath, "/admin/matches"].includes(
+    [adminMatchesPath].includes(
       archiveContextAt(currentPath.split("?")[0])?.innerPath ||
         currentPath.split("?")[0],
     ) ||
@@ -378,9 +378,6 @@ export function AdminPanel({
     [usersHistory, setUsersHistory] = useState<(string | null)[]>([]),
     [usersReload, setUsersReload] = useState(0),
     [usersLoading, setUsersLoading] = useState(true),
-    [settings, setSettings] = useState<Settings | null>(null),
-    [settingsAttempt, setSettingsAttempt] = useState(0),
-    [settingsError, setSettingsError] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
@@ -399,7 +396,7 @@ export function AdminPanel({
     [updateDirty],
   );
   const reportSettingsDirty = useCallback(
-    (dirty: boolean) => updateDirty("sharing", dirty),
+    (dirty: boolean) => updateDirty("settings", dirty),
     [updateDirty],
   );
   const visibleGroups = ADMIN_SECTIONS.map((group) => ({
@@ -445,21 +442,6 @@ export function AdminPanel({
         scopedArchivePath(archivePaths.manage),
       );
   }, [section, visibleSection]);
-  useEffect(() => {
-    if (!archiveOwner) return;
-    const controller = new AbortController();
-    void archiveFetch("/api/settings", { signal: controller.signal })
-      .then(async (response) => {
-        const value = await response.json();
-        if (!response.ok)
-          throw new Error(value.error || "Не удалось загрузить настройки");
-        setSettings(value);
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setSettingsError(e.message);
-      });
-    return () => controller.abort();
-  }, [archiveOwner, settingsAttempt]);
   useEffect(() => {
     if (!archiveOwner) return;
     const controller = new AbortController();
@@ -555,23 +537,9 @@ export function AdminPanel({
             </p>
           )}
         </header>
-        {settingsError && (
-          <div className="admin-load-error" role="alert">
-            <p>{settingsError}. Проверьте соединение и повторите попытку.</p>
-            <button
-              type="button"
-              onClick={() => {
-                setSettingsError("");
-                setSettingsAttempt((value) => value + 1);
-              }}
-            >
-              Повторить загрузку настроек
-            </button>
-          </div>
-        )}
-        {archiveOwner && !settings && !settingsError && (
-          <p role="status">Загружаем настройки…</p>
-        )}
+        {visibleSection === "settings" && <section className="admin-card">
+          <ArchiveSettingsForm family={family} save={save} busy={busy} onDirtyChange={reportSettingsDirty} />
+        </section>}
         {visibleSection === "users" && (
           <section className="admin-card archive-form">
             <details className="admin-access-help">
@@ -583,12 +551,6 @@ export function AdminPanel({
                 людей и связями древ управляет владелец.
               </p>
             </details>
-            {(settings?.publicTree || settings?.publicAlbums) && (
-              <p role="note" className="form-error">
-                Для доступа только к кровным родственникам и их супругам сначала
-                закройте публичное древо и альбомы в разделе «Общий доступ».
-              </p>
-            )}
             {!usersLoading && usersTotal === 0 && (
               <p>
                 Пригласите участника ссылкой из раздела «Приглашения». После
@@ -707,19 +669,6 @@ export function AdminPanel({
             )}
           </section>
         )}
-        {settings && visibleSection === "shares" && (
-          <PublicTreeSettings
-            saved={settings}
-            busy={busy}
-            notice={notice}
-            onDirtyChange={reportSettingsDirty}
-            onSave={async (draft) => {
-              const saved = await change("/api/settings", "PUT", draft);
-              if (saved) setSettings(saved);
-              return saved;
-            }}
-          />
-        )}
         {visibleSection === "sources" && (
           <SourceCatalogAdmin
             family={family}
@@ -768,6 +717,7 @@ export function AdminPanel({
         {visibleSection === "backups" && backupAccess && (
           <BackupAdmin
             archiveId={archiveContextAt(window.location.pathname)?.id || null}
+            onDirtyChange={reportSettingsDirty}
           />
         )}
         {visibleSection === "data" && (

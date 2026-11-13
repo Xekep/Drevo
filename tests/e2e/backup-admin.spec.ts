@@ -93,13 +93,13 @@ test("ручные копии выбранного древа отделены �
   await openAdminSection(page, "shares", "Общий доступ");
   await expect(
     page.getByRole("heading", { name: "Публичный просмотр" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   const archiveSettings = page.getByRole("button", {
     name: "Изменить название и описание",
   });
   await expect(archiveSettings).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Название и описание архива" })).toHaveCount(0);
-  await expect(page.getByRole("checkbox", { name: "Всё древо по ссылке" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Всё древо по ссылке" })).toHaveCount(0);
   await openAdminSection(page, "data", "Экспорт и импорт");
   await expect(archiveSettings).toHaveCount(0);
   await expect(

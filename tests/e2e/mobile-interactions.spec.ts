@@ -141,7 +141,7 @@ test("downward swipes dismiss mobile photo details and a person's card", async (
     }),
   );
   await pagedPhotoFixture(page, [photo]);
-  await page.goto("/photos/e2e-mobile-photo");
+  await page.goto("/photo/e2e-mobile-photo");
   await page.locator(".photo-info-toggle").click();
   const info = page.locator("#photo-information");
   await expect(info).toBeVisible();

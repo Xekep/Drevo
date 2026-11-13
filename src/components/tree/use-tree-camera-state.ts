@@ -149,6 +149,11 @@ export function useTreeCameraState({
   );
 
   useEffect(() => {
+    if (!nodeCount && ready && !initialViewSent.current) {
+      initialViewSent.current = true;
+      onInitialViewReady?.();
+      return;
+    }
     if (
       !geometry ||
       !nodeCount ||

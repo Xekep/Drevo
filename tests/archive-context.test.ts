@@ -72,7 +72,7 @@ test("participant preview preserves its identity across views and read resources
     assert.equal(archiveResourceUrl("/a/other-tree/media/hidden.png", path),
       `${preview!.prefix}/api/unavailable`);
     assert.equal(archiveViewAt(`${preview!.prefix}/people/person-1`), "tree");
-    assert.deepEqual(archiveTargetAt(`${preview!.prefix}/photos/photo-2`, ""),
+    assert.deepEqual(archiveTargetAt(`${preview!.prefix}/photo/photo-2`, ""),
       { kind: "photo", id: "photo-2" });
     assert.equal(archiveViewAt(`${preview!.prefix}/documents`), "documents");
     assert.equal(archiveViewAt(`${preview!.prefix}/manage`), null);

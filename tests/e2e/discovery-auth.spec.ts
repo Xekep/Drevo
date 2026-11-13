@@ -11,8 +11,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-for (const path of ["/discover", "/discover/search/Тестов", "/discover/person/tree-a/root",
-  "/discover/person/local-root", "/discover?q=Тестов"]) {
+for (const path of ["/discover", "/discover/search/Тестов", "/discover/person/11111111-1111-4111-8111-111111111111/root"]) {
   test(`guest cannot mount or query discovery at ${path}`, async ({ page }) => {
     let reads = 0;
     await page.route("**/api/session", (route) => route.fulfill({ json: guest }));
@@ -42,7 +41,7 @@ test("pending session keeps a deep search unmounted, then accepts an account wit
   });
   await page.route(isPeopleRead, (route) => {
     reads += 1;
-    return route.fulfill({ json: { results: [{ archiveId: "tree-a", id: "root", name: "Разрешённая карточка" }] } });
+    return route.fulfill({ json: { results: [{ archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "root", name: "Разрешённая карточка" }] } });
   });
   try {
     await page.goto("/discover/search/Тестов");
@@ -114,7 +113,7 @@ for (const event of ["focus", "visibilitychange", "pageshow"] as const) {
   });
 }
 
-for (const path of ["/discover/search/Тестов", "/discover/person/tree-a/root"]) {
+for (const path of ["/discover/search/Тестов", "/discover/person/11111111-1111-4111-8111-111111111111/root"]) {
   test(`logout on focus removes loaded personal data at ${path}`, async ({ page }) => {
     let loggedOut = false;
     let reads = 0;
@@ -122,7 +121,7 @@ for (const path of ["/discover/search/Тестов", "/discover/person/tree-a/ro
     await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [] } }));
     await page.route(isPeopleRead, (route) => {
       reads += 1;
-      const person = { archiveId: "tree-a", id: "root", name: "Старые личные данные" };
+      const person = { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "root", name: "Старые личные данные" };
       return route.fulfill({ json: { results: [person], person } });
     });
     await page.goto(path);
@@ -175,8 +174,8 @@ test("a detail 401 closes the form and card after a successful session check", a
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [] } }));
   await page.route(isPeopleRead, (route) => unauthorized
     ? route.fulfill({ status: 401, json: { error: "Войдите снова" } })
-    : route.fulfill({ json: { person: { archiveId: "tree-a", id: "root", name: "Старая карточка" } } }));
-  await page.goto("/discover/person/tree-a/root");
+    : route.fulfill({ json: { person: { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "root", name: "Старая карточка" } } }));
+  await page.goto("/discover/person/11111111-1111-4111-8111-111111111111/root");
   await expect(page.getByRole("heading", { name: "Старая карточка" })).toBeVisible();
   unauthorized = true;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));

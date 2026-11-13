@@ -42,7 +42,7 @@ test("редактор фото сохраняет снимок видимым �
     }),
   );
   await pagedPhotoFixture(page, [photo]);
-  await page.goto("/photos/e2e-editor-photo");
+  await page.goto("/photo/e2e-editor-photo");
   const toolbar = page.getByRole("group", { name: "Действия с фотографией" });
   if (testInfo.project.name === "mobile") {
     await expect(toolbar).toBeVisible();

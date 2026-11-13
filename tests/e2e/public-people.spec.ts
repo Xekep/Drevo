@@ -1,6 +1,20 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+// Browser fixtures use SQLite; expose its explicitly published rows through
+// the current global contract. Real global/RLS behavior is tested with PostgreSQL.
+test.beforeEach(async ({ page }) => {
+  const archiveId = "44444444-4444-4444-8444-444444444444";
+  await page.route(url => url.pathname === "/api/discovery/people", async route => {
+    const url = new URL(route.request().url());
+    const response = await page.request.get("/api/published-people/search" + url.search);
+    const data = await response.json();
+    await route.fulfill({ status: response.status(), json: { ...data,
+      results: data.results?.map((person: Record<string, unknown>) => ({ ...person, archiveId, archiveRouteId: archiveId })),
+      nextCursor: null } });
+  });
+});
+
 test("publication dialog shares the archive UUID instead of the legacy key", async ({ page }) => {
   const archiveRouteId = "b4625b46-aa17-8058-89c5-e6ee7accdd6c";
   await page.route("**/api/admin/published-people/e2e-memorial-person", route => route.fulfill({ json: {
@@ -18,7 +32,7 @@ test("publication dialog shares the archive UUID instead of the legacy key", asy
     new RegExp(`/discover/person/${archiveRouteId}/e2e-memorial-person$`));
 });
 
-test("discovery search links and old direct URLs use the canonical archive UUID", async ({ page }) => {
+test("discovery links use the archive UUID and retired direct URLs are rejected", async ({ page }) => {
   const archiveRouteId = "ed3e541a-1b6d-8a11-8328-13cf3c4f9062";
   const person = { archiveId: "legacy-primary", archiveRouteId, id: "same", name: "Тестовый Пётр" };
   await page.route((url) => url.pathname === "/api/discovery/people", route => route.fulfill({ json: { results: [person], nextCursor: null } }));
@@ -32,45 +46,44 @@ test("discovery search links and old direct URLs use the canonical archive UUID"
   await link.click();
   await expect(page.locator(".public-person-card")).toContainText(person.name);
   await page.goto("/discover/person/legacy-primary/same");
-  await expect(page).toHaveURL(new RegExp(`/discover/person/${archiveRouteId}/same$`));
-  await expect(page.locator(".public-person-card")).toContainText(person.name);
+  await expect(page.getByRole("heading",{name:"Здесь пока нет ветви"})).toBeVisible();
 });
 
 test("a published card with punctuation and Unicode in its ID opens from search", async ({ page }) => {
   const personId = "family:человек.1";
   const segment = encodeURIComponent(personId);
   await page.route((url) => url.pathname === "/api/discovery/people", (route) =>
-    route.fulfill({ json: { results: [{ archiveId: "tree-a", id: personId, name: "Особый Тестовый" }], nextCursor: null } }),
+    route.fulfill({ json: { results: [{ archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: personId, name: "Особый Тестовый" }], nextCursor: null } }),
   );
-  await page.route((url) => url.pathname === `/api/discovery/people/tree-a/${segment}`, (route) =>
-    route.fulfill({ json: { person: { archiveId: "tree-a", id: personId, name: "Особый Тестовый" }, linkedCards: [] } }),
+  await page.route((url) => url.pathname === `/api/discovery/people/11111111-1111-4111-8111-111111111111/${segment}`, (route) =>
+    route.fulfill({ json: { person: { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: personId, name: "Особый Тестовый" }, linkedCards: [] } }),
   );
   await page.goto("/discover");
   await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Особый");
   await page.getByRole("button", { name: "Найти" }).click();
   await page.getByRole("link", { name: "Особый Тестовый" }).click();
   await expect(page.locator(".public-person-card")).toContainText("Особый Тестовый");
-  expect(new URL(page.url()).pathname).toBe(`/discover/person/tree-a/${segment}`);
+  expect(new URL(page.url()).pathname).toBe(`/discover/person/11111111-1111-4111-8111-111111111111/${segment}`);
 });
 
 test("discovery keeps same-ID cards from different archives distinct and paginates", async ({ page }) => {
   await page.route((url) => url.pathname === "/api/discovery/people", (route) => {
     const cursor = new URL(route.request().url()).searchParams.get("cursor");
     return route.fulfill({ json: cursor
-      ? { results: [{ archiveId: "tree-c", id: "same", name: "Тестов Внук" }], nextCursor: null }
+      ? { results: [{ archiveId: "33333333-3333-4333-8333-333333333333", archiveRouteId: "33333333-3333-4333-8333-333333333333", id: "same", name: "Тестов Внук" }], nextCursor: null }
       : { results: [
-          { archiveId: "tree-a", id: "same", name: "Тестов Иван" },
-          { archiveId: "tree-b", id: "same", name: "Тестов Павел" },
+          { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "same", name: "Тестов Иван" },
+          { archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "same", name: "Тестов Павел" },
         ], nextCursor: "next" },
     });
   });
-  await page.route("**/api/discovery/people/tree-b/same", (route) =>
-    route.fulfill({ json: { person: { archiveId: "tree-b", id: "same", name: "Тестов Павел", birthYear: "1901" },
-      linkedCards: [{ archiveId: "tree-a", id: "same", name: "Тестов Иван" }] } }),
+  await page.route("**/api/discovery/people/22222222-2222-4222-8222-222222222222/same", (route) =>
+    route.fulfill({ json: { person: { archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "same", name: "Тестов Павел", birthYear: "1901" },
+      linkedCards: [{ archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "same", name: "Тестов Иван" }] } }),
   );
-  await page.route("**/api/discovery/people/tree-a/same", (route) =>
-    route.fulfill({ json: { person: { archiveId: "tree-a", id: "same", name: "Тестов Иван" },
-      linkedCards: [{ archiveId: "tree-b", id: "same", name: "Тестов Павел" }] } }),
+  await page.route("**/api/discovery/people/11111111-1111-4111-8111-111111111111/same", (route) =>
+    route.fulfill({ json: { person: { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "same", name: "Тестов Иван" },
+      linkedCards: [{ archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "same", name: "Тестов Павел" }] } }),
   );
   await page.goto("/discover");
   await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Тестов");
@@ -81,10 +94,10 @@ test("discovery keeps same-ID cards from different archives distinct and paginat
   await expect(page.locator(".public-person-card")).toHaveCount(3);
   await page.getByRole("link", { name: "Тестов Павел" }).click();
   await expect(page.locator(".public-person-card").first()).toContainText("1901");
-  await expect(page).toHaveURL(/\/discover\/person\/tree-b\/same$/);
+  await expect(page).toHaveURL(/\/discover\/person\/22222222-2222-4222-8222-222222222222\/same$/);
   await expect(page.getByRole("heading", { name: "Этот человек в других древах" })).toBeVisible();
   await page.getByRole("link", { name: "Тестов Иван" }).click();
-  await expect(page).toHaveURL(/\/discover\/person\/tree-a\/same$/);
+  await expect(page).toHaveURL(/\/discover\/person\/11111111-1111-4111-8111-111111111111\/same$/);
 });
 
 test("an open public card rechecks revoked links and publication on focus", async ({ page }) => {
@@ -95,7 +108,7 @@ test("an open public card rechecks revoked links and publication on focus", asyn
   const delayedRelease = new Promise<void>((resolve) => { releaseDelayed = resolve; });
   let signalDelayedDone!: () => void;
   const delayedDone = new Promise<void>((resolve) => { signalDelayedDone = resolve; });
-  await page.route("**/api/discovery/people/tree-a/root", async (route) => {
+  await page.route("**/api/discovery/people/11111111-1111-4111-8111-111111111111/root", async (route) => {
     const current = state;
     if (current === "delayed-linked") {
       signalDelayed();
@@ -105,16 +118,16 @@ test("an open public card rechecks revoked links and publication on focus", asyn
       if (current === "unpublished")
         await route.fulfill({ status: 404, json: { error: "Карточка недоступна" } });
       else await route.fulfill({ json: {
-        person: { archiveId: "tree-a", id: "root", name: "Public Root" },
+        person: { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "root", name: "Public Root" },
         linkedCards: current === "linked" || current === "delayed-linked"
-          ? [{ archiveId: "tree-b", id: "other", name: "Former Link" }] : [],
+          ? [{ archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "other", name: "Former Link" }] : [],
       } });
     } finally {
       if (current === "delayed-linked") signalDelayedDone();
     }
   });
   try {
-    await page.goto("/discover/person/tree-a/root");
+    await page.goto("/discover/person/11111111-1111-4111-8111-111111111111/root");
     await expect(page.getByRole("link", { name: "Former Link" })).toBeVisible();
 
     state = "delayed-linked";
@@ -156,14 +169,14 @@ test("an open discovery search drops withdrawn results and restarts pagination o
     }
     try {
       await route.fulfill({ json: cursor === "old-page"
-        ? { results: [{ archiveId: "tree-a", id: "withdrawn", name: "Former Card" }], nextCursor: null }
+        ? { results: [{ archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "withdrawn", name: "Former Card" }], nextCursor: null }
         : cursor === "new-page"
-          ? { results: [{ archiveId: "tree-b", id: "later", name: "Later Card" }], nextCursor: null }
+          ? { results: [{ archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "later", name: "Later Card" }], nextCursor: null }
           : withdrawn
-            ? { results: [{ archiveId: "tree-b", id: "survivor", name: "Surviving Card" }], nextCursor: "new-page" }
+            ? { results: [{ archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "survivor", name: "Surviving Card" }], nextCursor: "new-page" }
             : { results: [
-                { archiveId: "tree-a", id: "withdrawn", name: "Former Card" },
-                { archiveId: "tree-b", id: "survivor", name: "Surviving Card" },
+                { archiveId: "11111111-1111-4111-8111-111111111111", archiveRouteId: "11111111-1111-4111-8111-111111111111", id: "withdrawn", name: "Former Card" },
+                { archiveId: "22222222-2222-4222-8222-222222222222", archiveRouteId: "22222222-2222-4222-8222-222222222222", id: "survivor", name: "Surviving Card" },
               ], nextCursor: "old-page" } });
     } finally {
       if (cursor === "old-page" && delayOldPage) signalOldPageDone();
@@ -212,10 +225,8 @@ test("admin changes a card's search privacy from the eye control", async ({ page
   await dialog.getByRole("button", { name: "Опубликовать в поиске" }).click();
   await expect(dialog.getByRole("button", { name: "Снять с поиска" })).toBeVisible();
   await expect(privacy).toHaveAttribute("data-publication-state", "published");
-  await expect(dialog.getByRole("link", { name: /\/discover\/person\// })).toHaveAttribute(
-    "href", /\/discover\/person\/e2e-memorial-person$/,
-  );
-  await page.goto("/discover?q=%D0%A2%D0%B5%D1%81%D1%82%D0%BE%D0%B2");
+  await expect(dialog.getByRole("link", { name: /\/discover\/person\// })).toHaveCount(0);
+  await page.goto("/discover/search/Тестов");
   await expect(page.getByRole("heading", { name: /Тестов Иван/ })).toBeVisible();
   await expect(page.locator(".public-person-card")).not.toContainText("1940");
   await expect(page.locator(".public-person-card")).not.toContainText("биография");
@@ -306,7 +317,7 @@ test("owner opts one already published close relation into matching and can revo
   let enabled = false;
   const path = "/api/discovery/matches/relative-consents";
   await page.route((url) => url.pathname === "/api/admin/published-people/e2e-memorial-person",
-    (route) => route.fulfill({ json: { archiveId: "tree-a", published: true, publishable: true,
+    (route) => route.fulfill({ json: { archiveId: "11111111-1111-4111-8111-111111111111", published: true, publishable: true,
       fields: { birthSurname: false, birthYear: false, deathYear: false,
         birthPlace: false, deathPlace: false }, person: { name: "Тестов Иван" } } }));
   await page.route((url) => url.pathname === path, async (route) => {
@@ -340,7 +351,7 @@ test("owner selects an exact published grandparent path separately from a direct
     enabled: boolean }[] = [];
   const enabled = new Set<string>();
   await page.route((url) => url.pathname === "/api/admin/published-people/e2e-memorial-person",
-    (route) => route.fulfill({ json: { archiveId: "tree-a", published: true, publishable: true,
+    (route) => route.fulfill({ json: { archiveId: "11111111-1111-4111-8111-111111111111", published: true, publishable: true,
       fields: { birthSurname: false, birthYear: false, deathYear: false,
         birthPlace: false, deathPlace: false }, person: { name: "Тестов Иван" } } }));
   await page.route((url) => url.pathname === "/api/discovery/matches/relative-consents", (route) => {
@@ -443,7 +454,7 @@ test("publication admin refreshes an automatically revoked status on focus", asy
   await expect(row.locator(".publication-admin-state")).toHaveText("Можно найти");
   published = false;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(row.locator(".publication-admin-state")).toHaveText("Скрыт");
+  await expect(row).toHaveCount(0);
 });
 
 test("admin can review and revoke a selected discovery publication", async ({ page }) => {
@@ -468,17 +479,18 @@ test("admin can review and revoke a selected discovery publication", async ({ pa
   });
   await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
+  await page.getByRole("button",{name:"Добавить в поиск",exact:true}).click();
   await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
   const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Опубликовать выбранных" }).click();
   await expect(page.getByRole("region", { name: "Проверка публикации" })).toContainText("Проверено сервером");
   await page.getByRole("button", { name: "Подтвердить публикацию 1" }).click();
-  await expect(page.getByRole("status")).toContainText("Опубликовано карточек: 1");
+  await expect(page.getByRole("status").filter({ hasText: "Опубликовано карточек:" })).toContainText("Опубликовано карточек: 1");
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Снять выбранных с поиска" }).click();
   await page.getByRole("button", { name: "Подтвердить отзыв 1" }).click();
-  await expect(page.getByRole("status")).toContainText("Снято с поиска: 1");
+  await expect(page.getByRole("status").filter({ hasText: "Снято с поиска:" })).toContainText("Снято с поиска: 1");
 });
 
 test("a changed archive requires a fresh server review before batch publication", async ({ page }) => {
@@ -495,6 +507,7 @@ test("a changed archive requires a fresh server review before batch publication"
   });
   await page.goto("/manage");
   await openAdminSection(page, "publications", "Можно найти");
+  await page.getByRole("button",{name:"Добавить в поиск",exact:true}).click();
   const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Опубликовать выбранных" }).click();
@@ -516,6 +529,7 @@ test("publication status is not reported as hidden before the server answers", a
   try {
     await page.goto("/manage");
     await openAdminSection(page, "publications", "Можно найти");
+  await page.getByRole("button",{name:"Добавить в поиск",exact:true}).click();
     await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
     const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
     await expect(row).toContainText("Проверяем…");
