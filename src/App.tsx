@@ -944,7 +944,10 @@ export default function App() {
         busy={busy}
         onClose={closeEditor}
         onSaved={(id) => {
-          showPerson(id);
+          // Editing an existing profile must not initiate a new tree focus:
+          // in a limited 3D view that would replace the current camera anchor.
+          // New people still need an explicit reveal to make their card visible.
+          if (!personDraft.person) showPerson(id);
           if (!personDraft.bindSelf || !user) return;
           void archiveFetch(`/api/users/${encodeURIComponent(user.id)}`, {
             method: "PATCH",
