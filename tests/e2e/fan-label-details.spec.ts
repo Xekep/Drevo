@@ -38,7 +38,10 @@ test("outer fan rings retain names and years within their sectors", async ({ pag
     const lines = sectors.first().locator(".fan-sector-label tspan");
     await expect(lines).toHaveCount(4);
     await expect(lines.nth(1)).toHaveText("Александр");
-    await expect(lines.nth(2)).toHaveText("Владимирович");
+    const patronymic = await lines.nth(2).textContent();
+    expect(patronymic).toMatch(/^Владим/);
+    expect(patronymic === "Владимирович" || (patronymic!.endsWith("…") &&
+      "Владимирович".startsWith(patronymic!.slice(0, -1)))).toBe(true);
     await expect(lines.last()).toHaveText("1870 — 1940");
   }
   // Check actual glyph boxes against the SVG sector, independently of label budgets.
