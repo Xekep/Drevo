@@ -20,8 +20,10 @@ import { repairFamilyRoutes } from "./family-route-repair.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { shortenFamilyRows } from "./family-row-shortening.ts";
-import { finishColdFamilyLayout, preferColdFamilyLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
+import { finishColdFamilyLayout, preferColdFamilyLayout, preferJointUnionLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
+import { JOINT_UNION_LAYOUT_ID, jointUnionOrder } from "./joint-union-order.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
+import { repairAdditionalRoutes } from "./additional-route-repair.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
 import { optimizeFamilyRows, refineColdPlacement } from "./family-row-order.ts";
@@ -724,9 +726,14 @@ export async function unionGeometry(
   });
   const initialProfile =
     people.length > 900 && largeDecross ? "greedy" : undefined;
+  let jointGraph: ElkNode | undefined;
   let best = await geometryForSeed(
     people,
-    layout,
+    async graph => {
+      if (!previous && largeDecross && graph.children!.length <= 1000)
+        jointGraph = structuredClone(graph);
+      return layout(graph);
+    },
     reverse,
     links,
     1,
@@ -1239,7 +1246,7 @@ export async function unionGeometry(
     // before bundling can reject a safe old position after cold centering.
     best = optimizeFamilyRows(best, people, links, size, finalScore, previous);
     best = repairFamilyRoutes(best, size, finalScore).geometry;
-    return bundleFamilyBranches(best);
+    return repairAdditionalRoutes(bundleFamilyBranches(best), links, size);
   }
   const finish = (geometry: TreeGeometry) => {
     let result = finishColdFamilyLayout(geometry, people, links, size, finalScore);
@@ -1286,7 +1293,33 @@ export async function unionGeometry(
       }
     }
   }
-  // Final moves can reroute one child away from its siblings. Share corridors
-  // after every placement pass, while preserving the accepted card positions.
-  return best;
+  // Preserve the complete incumbent pipeline, including its free-order portfolio.
+  // A speculative order must beat its final bundled scene, not an earlier seed.
+  const complete = best;
+  if (jointGraph && geometryQuality(complete).crossings) {
+    try {
+      const plan = jointUnionOrder(jointGraph, complete);
+      if (plan) {
+        const placed = await geometryForSeed(people, graph => layout({
+          ...graph,
+          id: JOINT_UNION_LAYOUT_ID,
+          children: [...graph.children!].sort((a, b) => plan.order.get(a.id)! - plan.order.get(b.id)!),
+          layoutOptions: { ...graph.layoutOptions,
+            "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
+            "elk.layered.thoroughness": "1",
+          },
+        }), reverse, links, 1, size, false, undefined, plan.flippedPairs);
+        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
+        const nextExtent = extent(candidate), oldExtent = extent(complete);
+        if (Math.max(nextExtent.width, nextExtent.height) <=
+          Math.max(oldExtent.width, oldExtent.height) * 1.4 &&
+          nextExtent.width * nextExtent.height <= oldExtent.width * oldExtent.height * 1.5 &&
+          preferJointUnionLayout(candidate, complete, size, finalScore))
+          return repairAdditionalRoutes(candidate, links, size);
+      }
+    } catch {
+      // A failed model or speculative placement cannot discard the complete baseline.
+    }
+  }
+  return repairAdditionalRoutes(complete, links, size);
 }

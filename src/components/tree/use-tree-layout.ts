@@ -85,12 +85,14 @@ export function useTreeLayout(
     const requestId = ++requestRef.current;
     const last = lastGeometryRef.current;
     const changingProjection = last !== null && last.scope === cacheScope && last.projection !== projection;
-    const localHistory = mode === "generations" && last !== null && last.scope === cacheScope && last.key !== key &&
+    // Another projection owns its own layout. Carrying its slots into a cache
+    // miss would make the result depend on which view was opened beforehand.
+    const localHistory = !changingProjection && mode === "generations" && last !== null && last.scope === cacheScope && last.key !== key &&
       last.geometry.mode === mode && last.geometry.reverse === reverse &&
       input.people.length > MAX_INCREMENTAL_LAYOUT_PEOPLE && input.people.length <= MAX_LOCAL_LAYOUT_PEOPLE &&
       last.geometry.positions.length <= 6000 ? last : undefined;
     const previousGeometry = localHistory?.geometry || (
-      mode === "generations" &&
+      !changingProjection && mode === "generations" &&
       input.people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE &&
       last !== null &&
       last.scope === cacheScope &&

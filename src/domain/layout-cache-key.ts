@@ -2,7 +2,7 @@ import type { LayoutPerson, TreeMode } from "./tree-layout.ts";
 import type { FamilyLink } from "./types.ts";
 import { treeNodeSize } from "./tree-layout-constants.ts";
 
-export const LAYOUT_CACHE_VERSION = 34;
+export const LAYOUT_CACHE_VERSION = 35;
 export const SHARED_LAYOUT_MAX_PEOPLE = 1000;
 export type LayoutCacheInput = {
   people: LayoutPerson[];

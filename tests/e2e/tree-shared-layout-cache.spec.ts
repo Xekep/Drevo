@@ -29,6 +29,55 @@ const calculations = (page: Page) =>
         .__layoutCalculations.requests,
   );
 
+for (const large of [false, true]) test(`a blood projection cache miss never inherits slots from the full tree (${large ? "large" : "small"})`, async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.route("**/api/tree-layout", route => route.fulfill({ status: 503, json: { error: "offline" } }));
+  await page.route("**/api/family?projection=overview", async route => {
+    const response = await route.fetch(), data = await response.json();
+    const sample = data.family.people[0];
+    data.family.people.push({ ...sample, id: "projection-unrelated", parents: [], spouses: [] });
+    if (large) data.family.people.push(...Array.from({ length: 205 }, (_, index) => ({
+      ...sample, id: `projection-descendant-${index}`, birth: "2000", photo: undefined,
+      parents: ["e2e-child"], spouses: [],
+    })));
+    data.partial = false;
+    data.treePreferences = { ...data.treePreferences, animateOnLoad: false, fragmentThreshold: 0 };
+    await route.fulfill({ response, json: data });
+  });
+  await page.addInitScript(() => {
+    const requests: { people: number; previous: boolean; previousInput: boolean }[] = [];
+    Object.assign(window, { __projectionRequests: requests });
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      postMessage(message: unknown) {
+        const body = message as { people?: unknown[]; previousGeometry?: unknown; previousInput?: unknown };
+        if (body.people) requests.push({ people: body.people.length,
+          previous: !!body.previousGeometry, previousInput: !!body.previousInput });
+        super.postMessage(message);
+      }
+    };
+  });
+  const requests = () => page.evaluate(() => (window as typeof window & {
+    __projectionRequests: { people: number; previous: boolean; previousInput: boolean }[];
+  }).__projectionRequests);
+  await page.goto("/people/e2e-child");
+  const canvas = page.locator(".tree-canvas");
+  // This deliberately disables the server cache and runs real ELK in the Worker.
+  // The >200-person fixture can exceed the default 5s assertion on CI runners.
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true", { timeout: 30_000 });
+  const before = await requests();
+  const collapse = page.getByRole("button", { name: "Свернуть панель", exact: true });
+  if (await collapse.isVisible()) await collapse.click();
+  await familyViewAction(page, "Кровные");
+  await expect.poll(async () => (await requests()).length).toBe(before.length + 1);
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true", { timeout: 30_000 });
+  const blood = (await requests()).at(-1)!;
+  expect(blood.people).toBeLessThan(before.at(-1)!.people);
+  expect(blood.people > 200).toBe(large);
+  expect(blood.previous).toBe(false);
+  expect(blood.previousInput).toBe(false);
+});
+
 test("small close and blood projections use server hashes across fresh browsers and local cache on return", async ({ page, browser, request }) => {
   test.setTimeout(90_000);
   const original = await (await request.get("/api/family")).json();

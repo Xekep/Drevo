@@ -5,7 +5,8 @@ import { spaceFamilyRows } from "./family-row-spacing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { centerFamilyBranches } from "./family-centering.ts";
 import { alignFamilyLineages } from "./lineage-alignment.ts";
-import { familyAxisQuality } from "./family-axis.ts";
+import { familyAxisQuality, lineageChains } from "./family-axis.ts";
+import { routingQuality } from "./routing-quality.ts";
 import { familyRowNoWorse, routeFamilyMove, type FamilyRowScore } from "./family-row-moves.ts";
 import { freePartnerPlacements } from "./family-partner-placement.ts";
 import {
@@ -136,4 +137,41 @@ export function preferColdFamilyLayout(
     a.maxOffset <= b.maxOffset + 0.01 &&
     a.lineageDrift <= b.lineageDrift + 0.01 &&
     a.lineageSpan <= b.lineageSpan + 0.01;
+}
+
+/** A joint global proposal can trade a small pre-existing chain drift only for
+ * a substantial crossing improvement. Local moves retain the strict guard. */
+export function preferJointUnionLayout(
+  candidate: TreeGeometry,
+  current: TreeGeometry,
+  size: TreeNodeSize,
+  score: FamilyRowScore,
+) {
+  const next = score(candidate), before = score(current);
+  if (!familyRowNoWorse(next, before) || next.length > before.length ||
+    before.crossings - next.crossings < Math.max(1, before.crossings * 0.2)) return false;
+  const a = familyAxisQuality(candidate, size), b = familyAxisQuality(current, size);
+  if (a.interleavings > b.interleavings || a.offset > b.offset + 0.01 ||
+    a.single > b.single + 0.01 || a.maxOffset > b.maxOffset + 0.01 ||
+    a.lineageSpan > b.lineageSpan + 0.01 ||
+    a.lineageDrift > b.lineageDrift + Math.min(size.width / 4, b.lineageDrift * 0.1) + 0.01) return false;
+  const centers = new Map((candidate.occurrences || []).map(o => [o.block, [] as number[]]));
+  const positions = new Map(candidate.positions);
+  for (const o of candidate.occurrences || []) centers.get(o.block)!.push(positions.get(o.id)!.x + size.width / 2);
+  for (const chain of lineageChains(current, size)) {
+    const xs = chain.blocks.map(block => block.x + block.width / 2);
+    if (Math.max(...xs) - Math.min(...xs) > 0.01) continue;
+    const after = chain.blocks.map(block => {
+      const xs = centers.get(block.id);
+      return xs?.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : NaN;
+    });
+    if (after.some(x => !Number.isFinite(x)) || Math.max(...after) - Math.min(...after) > 0.01) return false;
+  }
+  const complete = (g: TreeGeometry) => routingQuality([
+    ...(g.branches || []).map(b => ({ group: b.union, route: b.route })),
+    ...(g.routes || []).map(([id, route]) => ({ group: `extra:${id}`, route })),
+  ]);
+  const allNext = complete(candidate), allBefore = complete(current);
+  return allNext.crossings <= allBefore.crossings && allNext.contacts <= allBefore.contacts &&
+    allNext.length <= allBefore.length && allNext.bends <= allBefore.bends + 4;
 }

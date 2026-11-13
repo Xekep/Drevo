@@ -5,7 +5,9 @@ import { readdirSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { randomFamily } from "./layout-fixtures.ts";
+import { crossBranchMarriages, randomFamily } from "./layout-fixtures.ts";
+import { createGeometryContactScorer } from "../src/domain/union-layout.ts";
+import { treeNodeSize } from "../src/domain/tree-layout-constants.ts";
 import { crowdedFamily } from "./local-family-space-fixture.ts";
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const bundle = readdirSync(join(dist, "assets")).find(
@@ -118,6 +120,21 @@ function productionWorker() {
     },
   });
 }
+
+test("production worker runs the bounded joint family order in both directions", { timeout: 15000 }, async () => {
+  const worker = productionWorker(), data = crossBranchMarriages(21), size = treeNodeSize();
+  const score = createGeometryContactScorer(size.width, size.height);
+  try {
+    for (const reverse of [false, true]) {
+      const result = await calculate(worker, "generations", reverse, data, "portrait");
+      assert.equal(result.error, undefined);
+      assert.equal(result.positions.length, data.length);
+      assert.equal(score.quality(result).crossings, 8);
+      assert.equal(score.cardContacts(result), 0);
+      assert.equal(score.cardOverlaps(result), 0);
+    }
+  } finally { await worker.terminate(); }
+});
 test("production worker opens a crowded partner slot without moving distant cards or generations", { timeout: 10000 }, async () => {
   const worker = productionWorker();
   try {

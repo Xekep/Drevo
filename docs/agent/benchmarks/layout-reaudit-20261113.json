@@ -1,0 +1,399 @@
+{
+  "date": "2026-11-13",
+  "main": "3abecce4317d5b30eacd6a8a04a4151d20b046b8",
+  "reviewedHead": "996a9efdf98f6e5f52cfcaa7e01e3d06c2b04430",
+  "full": [
+    {
+      "reverse": false,
+      "main": {
+        "milliseconds": 13473.1071,
+        "primaryCrossings": 10,
+        "allCrossings": 17,
+        "contacts": 27,
+        "length": 171558,
+        "width": 19003,
+        "height": 5680,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "proposed": {
+        "milliseconds": 14988.343200000001,
+        "primaryCrossings": 4,
+        "allCrossings": 10,
+        "contacts": 16,
+        "length": 162814.5,
+        "width": 20406,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    },
+    {
+      "reverse": true,
+      "main": {
+        "milliseconds": 13285.287399999997,
+        "primaryCrossings": 10,
+        "allCrossings": 17,
+        "contacts": 27,
+        "length": 171558,
+        "width": 19003,
+        "height": 5680,
+        "cardHits": 0,
+        "overlaps": 0
+      },
+      "proposed": {
+        "milliseconds": 15302.237699999998,
+        "primaryCrossings": 4,
+        "allCrossings": 10,
+        "contacts": 16,
+        "length": 162814.5,
+        "width": 20406,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0
+      }
+    }
+  ],
+  "chronology": [
+    {
+      "case": "private-full",
+      "people": 282,
+      "main": {
+        "siblings": {
+          "pairs": 241,
+          "inversions": 129
+        },
+        "timeline": [
+          {
+            "reverse": false,
+            "crossings": 77,
+            "contacts": 87,
+            "length": 294017,
+            "bends": 597,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          },
+          {
+            "reverse": true,
+            "crossings": 73,
+            "contacts": 91,
+            "length": 276940,
+            "bends": 574,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          }
+        ]
+      },
+      "pr": {
+        "siblings": {
+          "pairs": 241,
+          "inversions": 128
+        },
+        "timeline": [
+          {
+            "reverse": false,
+            "crossings": 77,
+            "contacts": 87,
+            "length": 294017,
+            "bends": 597,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          },
+          {
+            "reverse": true,
+            "crossings": 73,
+            "contacts": 91,
+            "length": 276940,
+            "bends": 574,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          }
+        ]
+      },
+      "identicalTimelineGeometry": true
+    },
+    {
+      "case": "private-projection-a",
+      "people": 256,
+      "main": {
+        "siblings": {
+          "pairs": 241,
+          "inversions": 134
+        },
+        "timeline": [
+          {
+            "reverse": false,
+            "crossings": 74,
+            "contacts": 85,
+            "length": 228868,
+            "bends": 564,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          },
+          {
+            "reverse": true,
+            "crossings": 78,
+            "contacts": 85,
+            "length": 224208,
+            "bends": 571,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          }
+        ]
+      },
+      "pr": {
+        "siblings": {
+          "pairs": 241,
+          "inversions": 134
+        },
+        "timeline": [
+          {
+            "reverse": false,
+            "crossings": 74,
+            "contacts": 85,
+            "length": 228868,
+            "bends": 564,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          },
+          {
+            "reverse": true,
+            "crossings": 78,
+            "contacts": 85,
+            "length": 224208,
+            "bends": 571,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          }
+        ]
+      },
+      "identicalTimelineGeometry": true
+    },
+    {
+      "case": "private-projection-b",
+      "people": 187,
+      "main": {
+        "siblings": {
+          "pairs": 236,
+          "inversions": 131
+        },
+        "timeline": [
+          {
+            "reverse": false,
+            "crossings": 35,
+            "contacts": 42,
+            "length": 204048.5,
+            "bends": 405,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          },
+          {
+            "reverse": true,
+            "crossings": 41,
+            "contacts": 53,
+            "length": 205629.5,
+            "bends": 388,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          }
+        ]
+      },
+      "pr": {
+        "siblings": {
+          "pairs": 236,
+          "inversions": 131
+        },
+        "timeline": [
+          {
+            "reverse": false,
+            "crossings": 35,
+            "contacts": 42,
+            "length": 204048.5,
+            "bends": 405,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          },
+          {
+            "reverse": true,
+            "crossings": 41,
+            "contacts": 53,
+            "length": 205629.5,
+            "bends": 388,
+            "overlaps": 0,
+            "cardHits": 0,
+            "wrongYear": 0
+          }
+        ]
+      },
+      "identicalTimelineGeometry": true
+    }
+  ],
+  "datedSynthetic": [
+    {
+      "seed": 1,
+      "people": 54,
+      "main": {
+        "crossings": 5,
+        "contacts": 5,
+        "length": 22674,
+        "bends": 54,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 8
+      },
+      "pr": {
+        "crossings": 5,
+        "contacts": 5,
+        "length": 22674,
+        "bends": 54,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 8
+      }
+    },
+    {
+      "seed": 7,
+      "people": 54,
+      "main": {
+        "crossings": 12,
+        "contacts": 12,
+        "length": 28608,
+        "bends": 52,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 3
+      },
+      "pr": {
+        "crossings": 12,
+        "contacts": 12,
+        "length": 28608,
+        "bends": 52,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 3
+      }
+    },
+    {
+      "seed": 14,
+      "people": 54,
+      "main": {
+        "crossings": 13,
+        "contacts": 13,
+        "length": 29788,
+        "bends": 52,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 7
+      },
+      "pr": {
+        "crossings": 13,
+        "contacts": 13,
+        "length": 29788,
+        "bends": 52,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 7
+      }
+    },
+    {
+      "seed": 21,
+      "people": 54,
+      "main": {
+        "crossings": 11,
+        "contacts": 11,
+        "length": 27722,
+        "bends": 42,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 3
+      },
+      "pr": {
+        "crossings": 11,
+        "contacts": 11,
+        "length": 27722,
+        "bends": 42,
+        "overlaps": 0,
+        "cardHits": 0,
+        "siblingPairs": 11,
+        "siblingInversions": 3
+      }
+    }
+  ],
+  "sat": {
+    "additionalFormulas": 10000,
+    "variables": [
+      3,
+      10
+    ],
+    "mismatches": 0
+  },
+  "corridorExperiment": [
+    {
+      "people": 86,
+      "attempts": 1728,
+      "before": {
+        "crossings": 2,
+        "contacts": 7,
+        "length": 66468
+      },
+      "after": {
+        "crossings": 2,
+        "contacts": 7,
+        "length": 66468
+      }
+    },
+    {
+      "people": 90,
+      "attempts": 1824,
+      "before": {
+        "crossings": 2,
+        "contacts": 7,
+        "length": 69575.5
+      },
+      "after": {
+        "crossings": 2,
+        "contacts": 7,
+        "length": 69575.5
+      }
+    },
+    {
+      "people": 12,
+      "attempts": 384,
+      "before": {
+        "crossings": 2,
+        "contacts": 2,
+        "length": 2912
+      },
+      "after": {
+        "crossings": 2,
+        "contacts": 2,
+        "length": 2912
+      }
+    }
+  ],
+  "notes": [
+    "Timeline uses the actual Worker pipeline: base layout size 220x84, then unionTimeline.",
+    "Sibling inversions count an older same-parent sibling to the right of a younger sibling at the same Y. Unknown/equal years are excluded.",
+    "The full-layout timing is one paired run per direction, not a latency distribution or mobile benchmark.",
+    "The previous 274-view sweep was not rerun; this pass adds chronology, dated fixtures, solver and corridor checks.",
+    "No runtime implementation change was justified by this follow-up audit."
+  ]
+}
