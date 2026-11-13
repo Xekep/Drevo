@@ -26,7 +26,7 @@ test("whole-archive public grants cannot be enabled or restored from old setting
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
-test("tree backup limit persists, rotates only after a successful new copy and permits explicit deletion", { timeout: 30_000 }, async () => {
+test("tree backups keep exactly five copies, reject settings changes and permit explicit deletion", { timeout: 30_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-tree-retention-"));
   const app = await startServer(0, join(directory, "archive.sqlite"), true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/backups`;
@@ -43,29 +43,26 @@ test("tree backup limit persists, rotates only after a successful new copy and p
     throw new Error("Backup did not finish");
   };
   try {
-    assert.equal((await send("/settings", "PUT", { keepCount: 2 })).status, 200);
-    for (const body of [{ keepCount: 0 }, { keepCount: 366 }, { keepCount: 1.5 },
+    for (const body of [{ keepCount: 0 }, { keepCount: 2 }, { keepCount: 5 },
       { keepCount: 2, enabled: true }, { keepCount: 2, storage: "remote" }])
-      assert.equal((await send("/settings", "PUT", body)).status, 400);
-    assert.equal((await fetch(base).then(response => response.json())).settings.keepCount, 2);
-    const stored = await app.archive.db.prepare("SELECT data FROM backup_settings WHERE id=1").get();
-    assert.equal(JSON.parse(String(stored!.data)).treeKeepCount, 2);
-    for (let i = 0; i < 3; i++) {
+      assert.equal((await send("/settings", "PUT", body)).status, 403);
+    // A stored historical value cannot change the fixed per-tree policy.
+    await app.archive.db.prepare("UPDATE backup_settings SET data=? WHERE id=1")
+      .run(JSON.stringify({ keepCount: 30, treeKeepCount: 1 }));
+    assert.equal((await fetch(base).then(response => response.json())).settings.keepCount, 5);
+    for (let i = 0; i < 6; i++) {
       assert.equal((await send("/create", "POST")).status, 202);
       await completed();
     }
     const status = await fetch(base).then(response => response.json());
-    assert.equal(status.total, 2);
-    assert.equal((await send("/settings", "PUT", { keepCount: 1 })).status, 200);
-    assert.equal((await fetch(base).then(response => response.json())).total, 2,
-      "saving a smaller limit does not immediately remove copies");
+    assert.equal(status.total, 5);
     const deleted = status.records[0];
     assert.equal((await send("/" + deleted.id, "DELETE")).status, 202);
-    assert.equal((await completed()).total, 1);
+    assert.equal((await completed()).total, 4);
     await assert.rejects(access(join(directory, "tree-backups", deleted.name)), { code: "ENOENT" });
     assert.equal((await send("/" + deleted.id, "DELETE")).status, 400);
     assert.equal((await send("/create", "POST")).status, 202);
-    assert.equal((await completed()).total, 1);
+    assert.equal((await completed()).total, 5);
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -96,15 +93,16 @@ test("retention preserves the new copy when the server clock moves backwards", {
   const backups = await backupCoordinator(archive.db, path, { treeOnly: true, schedule: false, now: () => now });
   const actor = { id: "local", name: "Владелец", role: "admin" as const, approved: true, createdAt: "" };
   try {
-    await backups.save({ keepCount: 1 }, actor);
-    await backups.startCreate(actor); await backups.idle();
-    const first = (await backups.status(actor.id)).records[0];
-    assert.ok(first);
+    await assert.rejects(backups.save({ keepCount: 1 }, actor));
+    for (let i = 0; i < 5; i++) { await backups.startCreate(actor); await backups.idle(); }
+    const before = (await backups.status(actor.id)).records.map(record => record.id);
+    assert.equal(before.length, 5);
     now -= 60_000;
     await backups.startCreate(actor); await backups.idle();
     const after = await backups.status(actor.id);
     assert.equal(after.job?.state, "succeeded", after.job?.error ?? "Backup failed");
-    assert.equal(after.total, 1);
-    assert.notEqual(after.records[0].id, first.id);
+    assert.equal(after.total, 5);
+    const fresh = after.records.filter(record => !before.includes(record.id));
+    assert.equal(fresh.length, 1, "the new copy survives rotation despite its older timestamp");
   } finally { await backups.close(); await archive.close(); await rm(directory, { recursive: true, force: true }); }
 });

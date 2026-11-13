@@ -92,7 +92,7 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   settings: { title: "Настройки древа", description: "Название и описание семейного архива." },
   backups: {
     title: "Резервные копии древа",
-    description: "Ручные копии этого архива, удаление и количество сохраняемых копий.",
+    description: "Ручные копии этого архива. Сохраняются пять последних.",
   },
   users: {
     title: "Участники",

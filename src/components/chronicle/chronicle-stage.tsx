@@ -69,7 +69,11 @@ export function ChronicleStage({
       previousFrame = 0,
       slowFrames = 0,
       sampled = 0,
-      announced = false;
+      announced = false,
+      preparing = false,
+      finishing = false,
+      failed = false,
+      finished = false;
     const resource = mediaPreview(photo.url, "display") || "";
     const preloaded = takePreloaded(resource);
     let target: HTMLImageElement | null = preloaded || new Image();
@@ -84,12 +88,16 @@ export function ChronicleStage({
     const timeout = window.setTimeout(() => fail(false),
       Math.max(0, 20_000 - (Date.now() - retries.current.startedAt)));
     function fail(retryable = true) {
-      if (cancelled) return;
+      if (cancelled || failed || finished) return;
+      failed = true;
       clearTimeout(timeout);
       cancelAnimationFrame(frame);
+      const delay = 2_000 * 2 ** retries.current.count;
       if (retryable && !announced && !retryTimer && retries.current.count < 2 &&
-        Date.now() - retries.current.startedAt < 19_000) {
-        const delay = ++retries.current.count * 250;
+        Date.now() - retries.current.startedAt + delay < 20_000) {
+        // Preview generation returns Retry-After: 2 while its queue is busy.
+        // Sub-second retries exhaust all attempts before that queue can recover.
+        retries.current.count++;
         // Keep the last displayed photo and playback busy until a fresh Image
         // retries the resource. A failed background preload is never user error.
         retryTimer = window.setTimeout(() => {
@@ -107,7 +115,8 @@ export function ChronicleStage({
       onError();
     }
     function finish() {
-      if (cancelled || !target) return;
+      if (cancelled || !target || finishing || failed || finished) return;
+      finishing = true;
       // Keep the decoded incoming layer / last GPU frame until the actual DOM
       // image is decoded, then exchange layers together on the next paint.
       settled.src = target.src;
@@ -118,6 +127,8 @@ export function ChronicleStage({
         frame = requestAnimationFrame(() => {
           if (cancelled) return;
           current.current = { id: photo.id, image: shown };
+          finished = true;
+          clearTimeout(retryTimer);
           setHasShown(true);
           surface.style.opacity = "0";
           overlay.style.opacity = "0";
@@ -141,6 +152,9 @@ export function ChronicleStage({
       renderer.current?.dispose();
       renderer.current = null;
       degrade();
+      // A settled DOM image no longer depends on WebGL. Do not cancel the
+      // pending swap frame if context loss arrives during its final decode.
+      if (finishing || finished) return;
       cancelAnimationFrame(frame);
       if (target?.complete && target.naturalWidth) {
         overlay.style.opacity = "1";
@@ -150,7 +164,10 @@ export function ChronicleStage({
     }
     surface.addEventListener("webglcontextlost", lost);
     target.onload = async () => {
-      if (cancelled || !target) return;
+      // A completed preload may have both its native load event and the queued
+      // completion below pending. Exchanging DOM image sources twice aborts decode.
+      if (cancelled || !target || preparing || failed || finished) return;
+      preparing = true;
       try {
         await target.decode();
         if (cancelled || !target) return;

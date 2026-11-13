@@ -34,6 +34,7 @@ test("outer fan rings retain names and years within their sectors", async ({ pag
   await expect(canvas).not.toHaveClass(/is-fan-revealing/);
   for (const generation of [2, 3, 4]) {
     const sectors = fan.locator(`[data-fan-generation="${generation}"]`);
+    await expect(sectors.first()).toHaveAttribute("data-label-orientation", generation < 4 ? "tangential" : "radial");
     await expect(sectors).toHaveCount(2 ** generation);
     const lines = sectors.first().locator(".fan-sector-label tspan");
     await expect(lines).toHaveCount(4);
