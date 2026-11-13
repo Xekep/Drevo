@@ -46,7 +46,7 @@ test("retired query links and long invitations are unavailable", async ({ page }
   }
 });
 
-test("tree backup controls save only retention and require confirmation before deleting", async ({ page }) => {
+test("tree backups show a fixed five-copy counter and require confirmation before deleting", async ({ page }) => {
   const id = "d6688201-4f30-47a2-a99b-39d0bb5ec2cf";
   const state: BackupStatus = { settings: { enabled: false, intervalHours: 24, keepCount: 5,
     storage: "local", remoteHost: "", remoteDirectory: "" }, nextRunAt: null,
@@ -57,9 +57,7 @@ test("tree backup controls save only retention and require confirmation before d
   await page.route(url => url.pathname.startsWith("/api/backups"), async route => {
     const request = route.request();
     if (request.method() === "PUT") {
-      expect(request.postDataJSON()).toEqual({ keepCount: 2 });
-      state.settings.keepCount = 2;
-      return route.fulfill({ json: state.settings });
+      throw new Error("Tree backup settings must not be editable");
     }
     if (request.method() === "DELETE") {
       expect(new URL(request.url()).pathname).toBe("/api/backups/" + id);
@@ -71,13 +69,13 @@ test("tree backup controls save only retention and require confirmation before d
     return route.fulfill({ json: state });
   });
   await page.goto("/manage?section=backups");
-  await page.getByLabel("Количество копий", { exact: true }).fill("2");
-  await page.getByRole("button", { name: "Сохранить лимит" }).click();
-  await expect(page.getByText("Настройки сохранены.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Количество копий", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Количество сохранённых копий", { exact: true })).toHaveText("Сохранено копий: 1 из 5");
   await page.getByRole("button", { name: /^Удалить копию от/ }).click();
   expect(deletions).toBe(0);
   await page.getByRole("button", { name: /^Подтвердить удаление от/ }).click();
   await expect(page.getByText("Копия удалена.", { exact: true })).toBeVisible();
   await expect(page.locator(".backup-list li")).toHaveCount(0);
+  await expect(page.getByLabel("Количество сохранённых копий", { exact: true })).toHaveText("Сохранено копий: 0 из 5");
   expect(deletions).toBe(1);
 });

@@ -5177,11 +5177,10 @@ try {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json", "x-drevo-backup": "1" },
     body: JSON.stringify({ keepCount: 2 }),
   });
-  assert.equal(selectedRetention.status, 200);
-  assert.equal((await selectedRetention.json()).keepCount, 2);
+  assert.equal(selectedRetention.status, 403);
   assert.equal((await fetch(securedBase + "/a/other-archive/api/backups", {
     headers: ownerHeaders,
-  }).then(response => response.json())).settings.keepCount, 2);
+  }).then(response => response.json())).settings.keepCount, 5);
   const managedSelected = await fetch(securedBase + "/a/other-archive/api/backups/create", {
     method: "POST",
     headers: { ...ownerHeaders, "x-drevo-backup": "1" },

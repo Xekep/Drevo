@@ -88,8 +88,7 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
 
   const running = busy || status?.job?.state === "running";
   const dirty =
-    !!draft && (scope === "platform" ? JSON.stringify(draft) !== JSON.stringify(status?.settings)
-      : draft.keepCount !== status?.settings.keepCount);
+    scope === "platform" && !!draft && JSON.stringify(draft) !== JSON.stringify(status?.settings);
   useUnsavedChanges(dirty, onDirtyChange);
   const preview =
     status?.job?.id === previewJobId ? status.job.preview : undefined;
@@ -128,7 +127,7 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
         archiveId,
         "/settings",
         "PUT",
-        scope === "tree" ? { keepCount: draft?.keepCount } : draft,
+        draft,
       )) as BackupSettings;
       setDraft(saved);
       setStatus((current) =>
@@ -166,17 +165,6 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
     );
   return (
     <div className="backup-admin">
-      {scope === "tree" && <section className="admin-card archive-form">
-        <form className="backup-settings" onSubmit={event => void save(event)}>
-          <label>Количество копий
-            <input type="number" min={1} max={365} required value={draft.keepCount} disabled={running}
-              onChange={event => field("keepCount", Number(event.target.value))} />
-          </label>
-          <small>После успешного создания новой копии удаляются самые старые сверх лимита.</small>
-          <button type="submit" className="primary-action" disabled={running || !dirty}>Сохранить лимит</button>
-          {notice && <p role="status">{notice}</p>}
-        </form>
-      </section>}
       {scope === "platform" && <section className="admin-card archive-form">
         <form
           onSubmit={(event) => void save(event)}
@@ -343,7 +331,8 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
             <h2>Сохранённые копии</h2>
             <p>{scope === "platform"
               ? "Данные всей платформы: все древа, аккаунты, настройки, оригиналы и ключи."
-              : `Данные и оригиналы этого древа. Сохраняется до ${status.settings.keepCount} копий.`}</p>
+              : "Данные и оригиналы этого древа. Сохраняются пять последних копий."}</p>
+            {scope === "tree" && <p aria-label="Количество сохранённых копий">Сохранено копий: {status.total} из 5</p>}
           </div>
           <button
             type="button"

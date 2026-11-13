@@ -56,25 +56,31 @@ function clipped(value: string, limit: number) {
 }
 
 /** Fit labels to the sector itself rather than hiding fields by generation. */
-function SectorDetails({ person, life, showNames, showYears, inner, outer, angle, radial, transform }: {
-  person: Family["people"][number]; life: string; showNames: boolean; showYears: boolean;
-  inner: number; outer: number; angle: number; radial: boolean; transform: string;
-}) {
-  const text = useRef<SVGTextElement>(null);
+function sectorTextBox(inner: number, outer: number, angle: number, radial: boolean, lines = 4) {
   const radius = (inner + outer) / 2, padding = 8, lineHeight = 14;
   const tangent = Math.tan(angle * Math.PI / 360);
   const height = radial ? 2 * (inner + padding) * tangent - 2 * padding : outer - inner - 2 * padding;
   const capacity = Math.max(0, Math.min(4, Math.floor(height / lineHeight)));
-  const names = showNames ? [person.surname, person.name, person.patronymic].filter(Boolean) : [];
-  const withYears = capacity > 0 && showYears && Boolean(life) && (!names.length || capacity > 1);
-  const lines = names.slice(0, capacity - Number(withYears)).map(value => ({ value: value!.trim(), years: false }));
-  if (withYears) lines.push({ value: life, years: true });
-  const blockHeight = Math.max(1, lines.length) * lineHeight;
+  const blockHeight = Math.max(1, Math.min(lines, capacity)) * lineHeight;
   const width = radial
     ? Math.min(outer - inner - 2 * padding,
         2 * (Math.sqrt((outer - padding) ** 2 - (blockHeight / 2) ** 2) - radius))
     : 2 * Math.min((radius - blockHeight / 2) * tangent - padding,
         Math.sqrt((outer - padding) ** 2 - (radius + blockHeight / 2) ** 2));
+  return { width: Math.max(0, width), capacity, lineHeight };
+}
+
+function SectorDetails({ person, life, showNames, showYears, inner, outer, angle, radial, transform }: {
+  person: Family["people"][number]; life: string; showNames: boolean; showYears: boolean;
+  inner: number; outer: number; angle: number; radial: boolean; transform: string;
+}) {
+  const text = useRef<SVGTextElement>(null);
+  const { capacity, lineHeight } = sectorTextBox(inner, outer, angle, radial);
+  const names = showNames ? [person.surname, person.name, person.patronymic].filter(Boolean) : [];
+  const withYears = capacity > 0 && showYears && Boolean(life) && (!names.length || capacity > 1);
+  const lines = names.slice(0, capacity - Number(withYears)).map(value => ({ value: value!.trim(), years: false }));
+  if (withYears) lines.push({ value: life, years: true });
+  const { width } = sectorTextBox(inner, outer, angle, radial, lines.length);
   const contents = lines.map(line => line.value).join("\0");
   useLayoutEffect(() => {
     const element = text.current;
@@ -192,8 +198,10 @@ export function FanChart({
           const labelRadius =
             slot.generation === 0 ? ROOT_RADIUS * 0.5 : (inner + outer) / 2;
           const label = polar(labelRadius, mid);
-          const availableArc = labelRadius * ((angle * Math.PI) / 180);
-          const denseLabel = slot.generation > 0 && availableArc < 150;
+          const radialBox = sectorTextBox(inner, outer, angle, true);
+          const tangentialBox = sectorTextBox(inner, outer, angle, false);
+          const denseLabel = slot.generation > 0 &&
+            radialBox.width * radialBox.capacity > tangentialBox.width * tangentialBox.capacity;
           const tangentialRotation = (((mid + 90) % 360) + 360) % 360;
           const rotation =
             slot.generation === 0
