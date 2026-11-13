@@ -294,6 +294,40 @@ test("duplicate image load completion prepares a chronicle photo only once", asy
   await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
 
+test("late photo decoding cannot clear an expired load error", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const state = { held: false, release: () => {} };
+    Object.assign(window, { chronicleLateDecode: state });
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function() {
+      const decoded = decode.call(this);
+      if (!this.isConnected && this.src.includes("chronicle-early.png") && !state.held) {
+        return decoded.then(() => new Promise<void>(resolve => {
+          state.held = true; state.release = resolve;
+        }));
+      }
+      return decoded;
+    };
+  });
+  await setup(page);
+  await page.goto("/people/e2e-child");
+  await launchChronicle(page);
+  const dialog = page.getByRole("dialog", { name: "Семейная хроника", exact: true });
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { chronicleLateDecode: { held: boolean } }).chronicleLateDecode.held,
+  )).toBe(true);
+  await page.clock.fastForward(21_000);
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { chronicleLateDecode: { release: () => void } }).chronicleLateDecode.release(),
+  );
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog.locator(".chronicle-photo")).toHaveJSProperty("naturalWidth", 0);
+});
+
 test("failed photo load is explicit after automatic retries, manual retry works and playback pauses", async ({
   page,
 }) => {

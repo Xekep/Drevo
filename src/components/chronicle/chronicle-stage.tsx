@@ -123,9 +123,9 @@ export function ChronicleStage({
       settled.alt = photoLabel(photo);
       const shown = target;
       void settled.decode().then(() => {
-        if (cancelled) return;
+        if (cancelled || failed || finished) return;
         frame = requestAnimationFrame(() => {
-          if (cancelled) return;
+          if (cancelled || failed || finished) return;
           current.current = { id: photo.id, image: shown };
           finished = true;
           clearTimeout(retryTimer);
@@ -170,10 +170,10 @@ export function ChronicleStage({
       preparing = true;
       try {
         await target.decode();
-        if (cancelled || !target) return;
+        if (cancelled || failed || finishing || finished || !target) return;
         overlay.src = target.src;
         await overlay.decode();
-        if (cancelled || !target) return;
+        if (cancelled || failed || finishing || finished || !target) return;
       } catch {
         fail();
         return;
