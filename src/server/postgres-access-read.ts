@@ -90,8 +90,8 @@ export function postgresAccessReader(client: pg.Client, archiveId: string) {
       const row = result.rows[0];
       return row
         ? {
-            publicTree: row.public_tree,
-            publicAlbums: row.public_albums,
+            publicTree: false,
+            publicAlbums: false,
             reverseTimeline: row.reverse_timeline,
           }
         : null;

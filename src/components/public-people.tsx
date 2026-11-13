@@ -1,11 +1,11 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { DiscoveryReadAccess } from "./discovery-access";
-import { adminMatchTargetPath } from "../domain/archive-routes.ts";
+import { adminMatchTargetPath, discoveryPageAt } from "../domain/archive-routes.ts";
 
 type PublicPerson = {
   archiveId?: string;
-  archiveRouteId?: string;
+  archiveRouteId: string;
   id: string;
   name: string;
   birthSurname?: string;
@@ -17,17 +17,7 @@ type PublicPerson = {
 type OwnedArchive = { id: string; title: string; role: string; approved: boolean; owned: boolean };
 
 function discoveryLocation() {
-  const parts = location.pathname.split("/").filter(Boolean);
-  const legacy = new URLSearchParams(location.search);
-  const decoded = (value?: string) => {
-    try { return value ? decodeURIComponent(value) : null; }
-    catch { return null; }
-  };
-  return {
-    query: parts[1] === "search" ? decoded(parts[2]) : legacy.get("q"),
-    archiveId: parts[1] === "person" && parts.length > 3 ? decoded(parts[2]) : legacy.get("archiveId"),
-    personId: parts[1] === "person" ? decoded(parts.at(-1)) : legacy.get("personId"),
-  };
+  return discoveryPageAt(location.pathname, location.search) || { query: null, archiveId: null, personId: null };
 }
 
 function PersonCard({ person }: { person: PublicPerson }) {
@@ -86,10 +76,7 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
     setBusy(true);
     setError("");
     try {
-      let response = await archiveFetch(url, { cache: "no-store", signal: controller.signal });
-      if (response.status === 501 && url.startsWith("/api/discovery/people?"))
-        response = await archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"),
-          { cache: "no-store", signal: controller.signal });
+      const response = await archiveFetch(url, { cache: "no-store", signal: controller.signal });
       if (controller.signal.aborted || version !== requestVersion.current) return null;
       if (response.status === 401) { requireLogin(revision); return null; }
       const data = await response.json();
@@ -108,10 +95,8 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
     if (checking) return;
     function load() {
       const { personId, archiveId, query: currentQuery } = discoveryLocation();
-      const url = personId
-        ? archiveId
-          ? `/api/discovery/people/${encodeURIComponent(archiveId)}/${encodeURIComponent(personId)}`
-          : `/api/published-people/${encodeURIComponent(personId)}`
+      const url = personId && archiveId
+        ? `/api/discovery/people/${encodeURIComponent(archiveId)}/${encodeURIComponent(personId)}`
         : currentQuery
           ? `/api/discovery/people?q=${encodeURIComponent(currentQuery)}`
           : "";
@@ -127,11 +112,6 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
         if (!data) return;
         if (personId) {
           setDetail(data.person || null);
-          if (data.person?.archiveRouteId) {
-            const canonical = `/discover/person/${encodeURIComponent(data.person.archiveRouteId)}/${encodeURIComponent(data.person.id)}`;
-            if (window.location.pathname !== canonical)
-              window.history.replaceState(window.history.state, "", canonical);
-          }
           setLinkedCards(data.linkedCards || []);
           setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
         } else {
@@ -216,7 +196,7 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
         <p>Владельцы обоих древ подтвердили соответствие карточек. Доступны только опубликованные сведения.</p>
         <div className="public-people-results">
           {linkedCards.map((person) => <a key={`${person.archiveId}:${person.id}`}
-            href={`/discover/person/${encodeURIComponent(person.archiveRouteId || person.archiveId || "")}/${encodeURIComponent(person.id)}`}
+            href={`/discover/person/${encodeURIComponent(person.archiveRouteId)}/${encodeURIComponent(person.id)}`}
             aria-label={person.name}>
             <PersonCard person={person} />
           </a>)}
@@ -228,7 +208,7 @@ export default function PublicPeople({ checking, revision, requireLogin }: Disco
           {results.map((person) => (
             <a
               key={`${person.archiveId || "local"}:${person.id}`}
-              href={`/discover/person/${person.archiveId ? `${encodeURIComponent(person.archiveRouteId || person.archiveId)}/` : ""}${encodeURIComponent(person.id)}`}
+              href={`/discover/person/${encodeURIComponent(person.archiveRouteId)}/${encodeURIComponent(person.id)}`}
               aria-label={person.name}
             >
               <PersonCard person={person} />

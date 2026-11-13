@@ -211,6 +211,17 @@ export function backupManagementHttp({
           await backups.startCreate((await auth.currentUser(req))!, false, session || undefined),
         );
       }
+      const deletion = /^\/api\/backups\/([a-f0-9-]{36})$/.exec(path);
+      if (deletion && req.method === "DELETE") {
+        if (!backups.treeOnly) return json(res, 403, { error: "Удаление доступно для копий древа." });
+        if (downloading) throw new BackupBusyError("Дождитесь скачивания резервной копии.");
+        const current = await auth.currentUser(req);
+        if (!canManageTreeBackups(current) || !!memberPreviewTarget(req))
+          throw new BackupAccessError(403);
+        const session = !auth.local && db.kind === "postgres" ? await auth.accountSession(req) : undefined;
+        if (!auth.local && db.kind === "postgres" && !session) throw new BackupAccessError(401);
+        return json(res, 202, await backups.remove(deletion[1], current, session || undefined));
+      }
       const match = path.match(
         /^\/api\/backups\/([a-f0-9-]{36})\/(preview|download)$/,
       );

@@ -86,6 +86,7 @@ export async function backupStore(
     };
   }
   async function save(value: unknown, actor: ArchiveUser) {
+    if (treeOnly) throw new BackupInputError("Для древа сохраняются пять последних копий. Настройка лимита недоступна.");
     const checked = validateBackupSettings(value),
       old = await settings();
     const next = nextRun(checked, old.value, old.next);
@@ -133,6 +134,7 @@ export async function backupStore(
     client: pg.PoolClient,
   ) {
     if (db.kind !== "postgres") throw new Error("PostgreSQL is required");
+    if (treeOnly) throw new BackupInputError("Для древа сохраняются пять последних копий. Настройка лимита недоступна.");
     const checked = validateBackupSettings(value);
     const previous = await client.query<{ data: string; next_run: string }>(
       `SELECT data,next_run FROM backup_settings
@@ -190,7 +192,7 @@ export async function backupStore(
       )
       .run(item.id, item.name, item.createdAt, JSON.stringify(item));
   }
-  async function excess(config: BackupSettings) {
+  async function excess(config: BackupSettings, createdId: string) {
     return (
       await db
         .prepare(
@@ -208,6 +210,8 @@ export async function backupStore(
             (item.remoteHost === config.remoteHost &&
               item.remoteDirectory === config.remoteDirectory)),
       )
+      // Keep the new copy even when clocks moved backwards.
+      .sort((a, b) => a.id === createdId ? -1 : b.id === createdId ? 1 : 0)
       .slice(config.keepCount);
   }
   return {

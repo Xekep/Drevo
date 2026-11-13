@@ -10,10 +10,8 @@ type Preview = {
 };
 
 export function JoinArchive({
-  archiveId,
   token,
 }: {
-  archiveId?: string;
   token: string;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -21,7 +19,7 @@ export function JoinArchive({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const body = JSON.stringify({ archiveId, token });
+  const body = JSON.stringify({ token });
   useEffect(() => {
     const controller = new AbortController();
     void Promise.all([

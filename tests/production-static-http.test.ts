@@ -72,12 +72,9 @@ test("production static streams SPA routes, files and shared page", async () => 
       "/a/family-one/people/sample-id",
       "/a/family-one/account",
       "/a/family-one/manage",
-      "/a/family-one/admin",
       "/manage/matches",
       "/a/family-one/manage/matches",
-      "/admin/matches",
-      "/a/family-one/admin/matches",
-      `/discover/person/family-one/${encodeURIComponent("family:человек.1")}`,
+      `/discover/person/11111111-1111-4111-8111-111111111111/${encodeURIComponent("family:человек.1")}`,
       `/discover/search/${encodeURIComponent("И".repeat(100))}`,
     ]) {
       const response = await fetch(app.base + path);
@@ -139,7 +136,7 @@ test("production static streams SPA routes, files and shared page", async () => 
       assert.equal(await shared.text(), html);
     }
 
-    for (const path of [`/join/${token}`, `/join/family-one/${token}`]) {
+    for (const path of [`/join/${token}`]) {
       const invitation = await fetch(app.base + path);
       assert.equal(invitation.status, 200);
       assert.equal(invitation.headers.get("referrer-policy"), "no-referrer");
@@ -148,6 +145,11 @@ test("production static streams SPA routes, files and shared page", async () => 
       assert.equal(await invitation.text(), html);
     }
     assert.equal((await fetch(app.base + `/join/${token.slice(1)}`)).status, 404);
+    for (const path of [`/join/family-one/${token}`, "/a/family-one/admin", "/admin/matches",
+      "/a/family-one/admin/matches", "/photos?personId=old", "/photos?photo=old",
+      "/tree?person=old", "/documents?documentId=old", "/discover?q=old",
+      "/discover/person/family-one/old", "/discover/person/old"])
+      assert.equal((await fetch(app.base + path)).status, 404, path);
 
     const linkedBranch = await fetch(app.base +
       "/discover/linked/family-one/11111111-1111-4111-8111-111111111111/family%3Aperson.1");

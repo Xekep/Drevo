@@ -8,6 +8,7 @@ import {
   LoaderCircle,
   RotateCcw,
   Server,
+  Trash2,
 } from "lucide-react";
 import type {
   BackupJob,
@@ -51,6 +52,7 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
   const [previewJobId, setPreviewJobId] = useState<string | null>(null);
   const [prepareComments, setPrepareComments] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   useEffect(() => {
     let active = true,
       timer: ReturnType<typeof setTimeout>;
@@ -97,12 +99,14 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
     setDraft((current) => (current ? { ...current, [key]: value } : null));
     setNotice("");
   }
-  async function act(path: string, body?: unknown) {
+  async function act(path: string, body?: unknown, method = "POST") {
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const job = (await request(scope, archiveId, path, "POST", body)) as BackupJob;
+      const job = (await request(scope, archiveId, path, method, body)) as BackupJob;
+      setDeleteId(null);
+      if (method === "DELETE") setOffset(0);
       if (path.endsWith("/preview")) setPreviewJobId(job.id);
       setStatus((current) => (current ? { ...current, job } : current));
       setRefresh((value) => value + 1);
@@ -327,7 +331,8 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
             <h2>Сохранённые копии</h2>
             <p>{scope === "platform"
               ? "Данные всей платформы: все древа, аккаунты, настройки, оригиналы и ключи."
-              : "Данные и оригиналы этого древа. Пять последних ручных копий."}</p>
+              : "Данные и оригиналы этого древа. Сохраняются пять последних копий."}</p>
+            {scope === "tree" && <p aria-label="Количество сохранённых копий">Сохранено копий: {status.total} из 5</p>}
           </div>
           <button
             type="button"
@@ -342,9 +347,6 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
         {dirty && <small>Сохраните настройки перед созданием копии.</small>}
         {status.available === false && <p role="status">{status.unavailableReason}</p>}
         {scope === "platform" && <p>Полное восстановление выполняет администратор сервера в режиме обслуживания.</p>}
-        {scope === "tree" && <details><summary>Прежние резервные копии</summary>
-          <p>Копии full-* остаются в прежнем хранилище. Их можно загрузить через «Восстановить из файла на компьютере». Они сохраняют один архив.</p>
-        </details>}
         {status.job && (
           <p
             className={"backup-job " + status.job.state}
@@ -364,6 +366,8 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
                   ? "Проверяем копию для восстановления…"
                   : status.job.kind === "download"
                     ? "Подготавливаем скачивание копии…"
+                    : status.job.kind === "delete"
+                      ? "Удаляем копию…"
                     : "Проверяем подключение…"
               : status.job.state === "failed"
                 ? status.job.error
@@ -372,6 +376,8 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
                     ? "Резервная копия создана."
                     : status.job.kind === "download"
                       ? "Скачивание копии подготовлено."
+                      : status.job.kind === "delete"
+                        ? "Копия удалена."
                       : status.job.kind === "check"
                         ? "Соединение установлено, запись в каталог доступна."
                         : "Копия проверена. Для замены данных требуется подтверждение.")}
@@ -420,6 +426,16 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
                   <RotateCcw size={15} aria-hidden="true" />
                   Восстановить
                 </button>}
+                {scope === "tree" && <>
+                  <button type="button" disabled={running} className="danger-action"
+                    aria-label={`${deleteId === item.id ? "Подтвердить удаление" : "Удалить копию"} от ${date(item.createdAt)}`}
+                    onClick={() => deleteId === item.id
+                      ? void act("/" + item.id, undefined, "DELETE") : setDeleteId(item.id)}>
+                    <Trash2 size={15} aria-hidden="true" />
+                    {deleteId === item.id ? "Подтвердить удаление" : "Удалить"}
+                  </button>
+                  {deleteId === item.id && <button type="button" disabled={running} onClick={() => setDeleteId(null)}>Отмена</button>}
+                </>}
               </div>
             </li>
           ))}
@@ -480,7 +496,7 @@ export function BackupAdmin({ archiveId, scope = "tree", onDirtyChange }: { arch
           {error}
         </p>
       )}
-      {notice && (
+      {notice && scope === "platform" && (
         <p role="status" className="admin-notice">
           {notice}
         </p>

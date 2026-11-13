@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 test("ссылка на человека открывает карточку и работает с историей браузера", async ({
   page,
 }, testInfo) => {
-  await page.goto("/tree?person=e2e-memorial-person");
+  await page.goto("/people/e2e-memorial-person");
   await expect(page).toHaveURL(
     "http://127.0.0.1:4173/people/e2e-memorial-person",
   );
@@ -211,9 +211,9 @@ test("ссылка на снимок открывает просмотр и за
     }),
   );
   await pagedPhotoFixture(page, [photo, nextPhoto]);
-  await page.goto("/photos?photo=e2e-photo");
-  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
-  await page.goto("/photos/e2e-photo");
+  await page.goto("/photo/e2e-photo");
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photo/e2e-photo");
+  await page.goto("/photo/e2e-photo");
   if (testInfo.project.name === "desktop") {
     const stageBefore = await page.locator(".photo-stage").boundingBox(),
       informationBefore = await page
@@ -261,7 +261,7 @@ test("ссылка на снимок открывает просмотр и за
     Math.max(...positions.map((box) => box!.y)) -
       Math.min(...positions.map((box) => box!.y)),
   ).toBeLessThan(2);
-  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photo/e2e-photo");
   await page
     .locator(".photo-person-sidebar")
     .getByRole("button", { name: "О снимке" })
@@ -276,7 +276,7 @@ test("ссылка на снимок открывает просмотр и за
   await expect(
     page.getByRole("dialog", { name: /Просмотр фото/ }),
   ).toBeVisible();
-  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photo/e2e-photo");
   if (testInfo.project.name === "desktop") {
     await page
       .getByRole("button", { name: /Показать сведения:.*Иван/ })
@@ -290,7 +290,7 @@ test("ссылка на снимок открывает просмотр и за
     ).toBeVisible();
   }
   await page.locator(".photo-previous").click();
-  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo-next");
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photo/e2e-photo-next");
   await expect(
     page.getByRole("dialog", { name: /Просмотр фото/ }),
   ).toBeVisible();

@@ -62,7 +62,7 @@ test("starter cleanup preserves real people, photos, accounts and settings and r
     const settings = await settingsStore(archive.db);
     await settings.write({
       publicTree: false,
-      publicAlbums: true,
+      publicAlbums: false,
       reverseTimeline: true,
     });
     const users = await userStore(archive.db);

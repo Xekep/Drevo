@@ -646,7 +646,7 @@ test("привязка аккаунта и область видимости д�
           reverseTimeline: false,
         })
       ).status,
-      200,
+      400,
     );
     assert.equal(
       (
@@ -654,7 +654,7 @@ test("привязка аккаунта и область видимости д�
           treeAccess: "common_ancestors",
         })
       ).status,
-      400,
+      200,
     );
     const beforeRemoval = await app.archive.read();
     await app.archive.write(

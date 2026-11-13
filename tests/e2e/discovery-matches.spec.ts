@@ -103,14 +103,16 @@ test("a non-owner does not get the cross-tree handoff on a tree card", async ({ 
 
 test("a published-card link preselects its exact target for an owning archive", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров", birthYear: "1900" };
-  const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров", birthYear: "1901" };
+  const target = { archiveId: "tree-b", archiveRouteId: "56d3392a-6f2f-8f53-834f-191ec82ba6ab", id: "person-b", name: "Иван Петров", birthYear: "1901" };
   let posted = false;
   // The SQLite browser fixture has one archive. Reuse it for a scoped route while
   // supplying the PostgreSQL-only discovery responses explicitly below.
   await page.route("**/a/tree-a/api/**", (route) => route.continue({
     url: route.request().url().replace("/a/tree-a/api/", "/api/"),
   }));
-  await page.route("**/api/discovery/people/tree-b/person-b", (route) =>
+  // Public viewing uses the route UUID; owner matching reads by its internal key.
+  await page.route(url => ["/api/discovery/people/56d3392a-6f2f-8f53-834f-191ec82ba6ab/person-b",
+    "/a/tree-a/api/discovery/people/tree-b/person-b"].includes(url.pathname), (route) =>
     route.fulfill({ json: { person: target, linkedCards: [] } }));
   await page.route("**/api/account/archives", (route) => route.fulfill({ json: { archives: [
     { id: "tree-a", href: "/a/tree-a/tree", title: "Моё дерево", role: "admin", approved: true, owned: true, current: true },
@@ -133,7 +135,7 @@ test("a published-card link preselects its exact target for an owning archive", 
     }
     return route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } });
   });
-  await page.goto("/discover/person/tree-b/person-b");
+  await page.goto("/discover/person/56d3392a-6f2f-8f53-834f-191ec82ba6ab/person-b");
   const handoff = page.getByRole("link", { name: "Открыть сопоставление в древе «Моё дерево»" });
   await expect(handoff).toHaveAttribute("href", "/a/tree-a/manage/matches/target/tree-b/person-b");
   await expect(page.getByRole("link", { name: /Дерево адресата|Чужое дерево/ })).toHaveCount(0);

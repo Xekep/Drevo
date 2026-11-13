@@ -71,6 +71,9 @@ async function managedTree(page: Page, globalRole: "admin" | "researcher" | null
   await page.route("**/api/backups**", (route) => {
     const path = new URL(route.request().url()).pathname;
     paths.push(route.request().method() + " " + path);
+    if (route.request().method() === "PUT" && path.endsWith("/settings")) {
+      throw new Error("Tree backup settings must not be editable");
+    }
     if (path.endsWith("/create")) status.job = {
       id: "created", kind: "create", state: "succeeded", startedAt: "2026-10-06T00:00:00Z",
     };
@@ -112,6 +115,8 @@ for (const example of [
   await tab.click();
   await expect(page.getByRole("button", { name: "Создать копию", exact: true })).toBeVisible();
   await expect(page.getByLabel("Количество копий")).toHaveCount(0);
+  await expect(page.getByLabel("Количество сохранённых копий")).toHaveText("Сохранено копий: 1 из 5");
+  await expect(page.getByRole("button", { name: "Создать копию", exact: true })).toBeEnabled();
   await expect(page.getByRole("heading", { name: "Автоматические копии" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Скачать копию от/ })).toHaveAttribute("href",
     "/a/tree-a/api/backups/11111111-1111-4111-8111-111111111111/download");

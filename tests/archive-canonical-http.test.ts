@@ -25,7 +25,7 @@ test("public archive paths use the configured primary, not a hardcoded legacy na
   assert.equal(archivePagePath(undefined, "/s/token", "main-tree"), "/s/token");
 });
 
-test("old primary page bookmarks redirect without changing API, previews or another tree's scope", async () => {
+test("retired primary page aliases are rejected without redirecting or affecting API scope", async () => {
   const canonical = archiveCanonicalHttp("main-tree");
   const server = createServer((req, res) => {
     if (
@@ -38,7 +38,7 @@ test("old primary page bookmarks redirect without changing API, previews or anot
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    for (const [source, target] of [
+    for (const [source] of [
       ["/a/main-tree/tree?layout=depth", "/tree?layout=depth"],
       ["/a/main-tree/people/person-one", "/people/person-one"],
       ["/a/main-tree/photos/photo-one", "/photos/photo-one"],
@@ -55,8 +55,8 @@ test("old primary page bookmarks redirect without changing API, previews or anot
           method,
           redirect: "manual",
         });
-        assert.equal(response.status, 308, `${method} ${source}`);
-        assert.equal(response.headers.get("location"), target);
+        assert.equal(response.status, 404, `${method} ${source}`);
+        assert.equal(response.headers.get("location"), null);
         assert.equal(response.headers.get("cache-control"), "no-store");
         assert.equal(response.headers.get("referrer-policy"), "no-referrer");
       }

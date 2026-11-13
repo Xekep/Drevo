@@ -189,7 +189,7 @@ test("Ctrl+колесо масштабирует древо и не меняет
   ).not.toHaveCount(0);
   await expect(
     page.locator(
-      '[data-fan-generation="3"][data-label-orientation="radial"]',
+      '[data-fan-generation="3"][data-label-orientation="tangential"]',
     ),
   ).not.toHaveCount(0);
   await expect(

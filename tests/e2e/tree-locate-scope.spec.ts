@@ -56,7 +56,7 @@ for (const presentation of ["flat", "depth"] as const) {
         await page.route("**/media/anchor-navigation.png**", route => route.fulfill({
           contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"/>',
         }));
-        await page.goto(`/photos/${photo.id}`);
+        await page.goto(`/photo/${photo.id}`);
         if (isMobile) {
           await page.getByRole("button", { name: "О снимке", exact: true }).click();
           await page.locator(".photo-people-names .photo-person-name").click();

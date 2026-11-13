@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
 const token = "a".repeat(43);
-const joinPath = `/join/family-one/${token}`;
+const joinPath = `/join/${token}`;
 
 for (const archiveId of ["legacy-primary", "family-two"]) {
   test(`opaque invitation resolves ${archiveId} and survives sign-in without an archive id`, async ({ page }) => {

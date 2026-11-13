@@ -1,13 +1,10 @@
 import { archiveContextAt, memberPreviewAt } from "./archive-context.ts";
 
 /** Opaque invitations do not expose the archive identifier in copied links. */
-export function invitationAt(pathname: string): { archiveId?: string; token: string } | null {
+export function invitationAt(pathname: string): { token: string } | null {
   const short = /^\/join\/([A-Za-z0-9_-]{43})$/.exec(pathname);
   if (short) return { token: short[1] };
-  // TODO(remove): roadmap R7.1; remove after the last legacy link expires
-  // (maximum 720 hours after the last old-release issuance), docs/engineering/roadmap.md.
-  const legacy = /^\/join\/([A-Za-z0-9][A-Za-z0-9-]{2,63})\/([A-Za-z0-9_-]{43})$/.exec(pathname);
-  return legacy ? { archiveId: legacy[1], token: legacy[2] } : null;
+  return null;
 }
 
 const innerViewPath = (pathname: string) =>
@@ -29,7 +26,6 @@ export const archivePaths = {
 } as const;
 export type ArchiveView = keyof typeof archivePaths;
 export const adminMatchesPath = "/manage/matches";
-const legacyAdminMatchesPath = "/admin/matches";
 
 type MatchTarget = { archiveId: string; personId: string };
 const matchArchiveId = /^[A-Za-z0-9-]{3,64}$/;
@@ -50,7 +46,7 @@ export function adminMatchTargetPath(ownArchiveId: string, target: MatchTarget) 
 
 export function adminMatchTargetAt(pathname: string): MatchTarget | null {
   const archive = archiveContextAt(pathname);
-  const match = archive && /^\/(?:manage|admin)\/matches\/target\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(archive.innerPath);
+  const match = archive && /^\/manage\/matches\/target\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(archive.innerPath);
   if (!match || match[1] === archive.id) return null;
   try {
     const personId = decodeURIComponent(match[2]);
@@ -67,7 +63,7 @@ export function adminMatchSourcePath(archiveId: string, personId: string) {
 
 export function adminMatchSourceAt(pathname: string): string | null {
   const archive = archiveContextAt(pathname);
-  const match = archive && /^\/(?:manage|admin)\/matches\/from\/([^/]{1,1200})$/.exec(archive.innerPath);
+  const match = archive && /^\/manage\/matches\/from\/([^/]{1,1200})$/.exec(archive.innerPath);
   if (!match) return null;
   try {
     const personId = decodeURIComponent(match[1]);
@@ -77,6 +73,32 @@ export function adminMatchSourceAt(pathname: string): string | null {
 
 export type ArchiveEntity =
   { kind: "person"; id: string } | { kind: "photo"; id: string };
+
+export function archiveAlbumPath(personId: string | null, year: string | null = null) {
+  const base = personId ? `/photos/${encodeURIComponent(personId)}` : archivePaths.gallery;
+  return year ? `${base}?${new URLSearchParams({ year })}` : base;
+}
+
+export function archiveAlbumAt(pathname: string): string | null {
+  const match = /^\/photos\/([^/]+)\/?$/.exec(innerViewPath(pathname));
+  return match ? archiveEntityAt(`/people/${match[1]}`)?.id || null : null;
+}
+
+export function discoveryPageAt(pathname: string, search = "") {
+  if (search) return null;
+  if (pathname === "/discover") return { query: null, archiveId: null, personId: null };
+  const query = /^\/discover\/search\/([^/]{1,1200})$/.exec(pathname);
+  if (query) {
+    try {
+      const value = decodeURIComponent(query[1]);
+      return value.length <= 100 && !/[\p{Cc}]/u.test(value)
+        ? { query: value, archiveId: null, personId: null } : null;
+    } catch { return null; }
+  }
+  const person = /^\/discover\/person\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\/([^/]{1,1200})$/i.exec(pathname);
+  const id = person && archiveEntityAt(`/people/${person[2]}`)?.id;
+  return person && id && matchPersonId(id) ? { query: null, archiveId: person[1], personId: id } : null;
+}
 
 export function archiveDocumentPath(
   personId: string | null,
@@ -133,9 +155,9 @@ export function archiveDocumentAt(pathname: string): ArchiveDocumentRoute | null
   return { personId, documentId, ...(pageNumber ? { pageNumber } : {}) };
 }
 
-/** Один закодированный сегмент после /people или /photos. */
+/** Один закодированный сегмент после /people или /photo. */
 export function archiveEntityAt(pathname: string): ArchiveEntity | null {
-  const match = /^\/(people|photos)\/([^/]+)\/?$/.exec(
+  const match = /^\/(people|photo)\/([^/]+)\/?$/.exec(
     innerViewPath(pathname),
   );
   if (!match) return null;
@@ -160,19 +182,24 @@ export function archiveEntityAt(pathname: string): ArchiveEntity | null {
 }
 
 /** Адреса разделов и карточек; неизвестный путь не становится файловым маршрутом. */
-export function archiveViewAt(pathname: string): ArchiveView | null {
+export function archiveViewAt(pathname: string, search = ""): ArchiveView | null {
+  const query = new URLSearchParams(search);
+  const inner = innerViewPath(pathname).replace(/\/$/, "");
+  if (((inner === "/tree" || inner === "/") && query.has("person")) ||
+      (inner === "/photos" && (query.has("photo") || query.has("personId"))) ||
+      (inner === "/documents" && (query.has("personId") || query.has("documentId")))) return null;
   if (memberPreviewAt(pathname) &&
       /^\/(?:account|admin|manage)(?:\/|$)/.test(innerViewPath(pathname)))
     return null;
-  if (archiveContextAt(pathname)?.innerPath.replace(/\/$/, "") === archivePaths.admin)
-    return "manage";
+  if (archiveContextAt(pathname) && /^\/admin(?:\/|$)/.test(inner)) return null;
   const entity = archiveEntityAt(pathname);
   if (entity) return entity.kind === "person" ? "tree" : "gallery";
+  if (archiveAlbumAt(pathname)) return "gallery";
   if (archiveDocumentAt(pathname)) return "documents";
   const innerPath = innerViewPath(pathname);
   const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";
-  if (path === adminMatchesPath || path === legacyAdminMatchesPath) return "manage";
+  if (path === adminMatchesPath) return "manage";
   if (adminMatchTargetAt(pathname)) return "manage";
   if (adminMatchSourceAt(pathname)) return "manage";
   return (

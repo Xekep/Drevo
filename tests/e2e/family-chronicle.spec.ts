@@ -263,6 +263,71 @@ test("WebGL context loss during a Glass transition falls back without hiding the
   ).toBeEnabled();
 });
 
+test("duplicate image load completion prepares a chronicle photo only once", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const state = { decodes: 0 };
+    Object.assign(window, { chronicleLoadCompletions: state });
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "onload")!;
+    Object.defineProperty(HTMLImageElement.prototype, "onload", {
+      configurable: true,
+      get() { return descriptor.get!.call(this); },
+      set(handler) {
+        descriptor.set!.call(this, handler ? function(this: HTMLImageElement, event: Event) {
+          handler.call(this, event);
+          handler.call(this, event);
+        } : null);
+      },
+    });
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function() {
+      if (!this.isConnected && this.src.includes("chronicle-early.png")) state.decodes++;
+      return decode.call(this);
+    };
+  });
+  await setup(page);
+  const dialog = await openPerson(page);
+  await expect(dialog.locator(".chronicle-photo")).toHaveJSProperty("naturalWidth", 600);
+  expect(await page.evaluate(() =>
+    (window as unknown as { chronicleLoadCompletions: { decodes: number } }).chronicleLoadCompletions.decodes,
+  )).toBe(1);
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+});
+
+test("late photo decoding cannot clear an expired load error", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const state = { held: false, release: () => {} };
+    Object.assign(window, { chronicleLateDecode: state });
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function() {
+      const decoded = decode.call(this);
+      if (!this.isConnected && this.src.includes("chronicle-early.png") && !state.held) {
+        return decoded.then(() => new Promise<void>(resolve => {
+          state.held = true; state.release = resolve;
+        }));
+      }
+      return decoded;
+    };
+  });
+  await setup(page);
+  await page.goto("/people/e2e-child");
+  await launchChronicle(page);
+  const dialog = page.getByRole("dialog", { name: "Семейная хроника", exact: true });
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { chronicleLateDecode: { held: boolean } }).chronicleLateDecode.held,
+  )).toBe(true);
+  await page.clock.fastForward(21_000);
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { chronicleLateDecode: { release: () => void } }).chronicleLateDecode.release(),
+  );
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog.locator(".chronicle-photo")).toHaveJSProperty("naturalWidth", 0);
+});
+
 test("failed photo load is explicit after automatic retries, manual retry works and playback pauses", async ({
   page,
 }) => {
@@ -279,9 +344,12 @@ test("failed photo load is explicit after automatic retries, manual retry works 
           body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"/>',
         });
   });
-  const dialog = await openPerson(page);
+  await page.goto("/people/e2e-child");
+  await launchChronicle(page);
+  const dialog = page.getByRole("dialog", { name: "Семейная хроника", exact: true });
   await expect(dialog.getByRole("alert")).toHaveText(
     "Не удалось загрузить фотографию.Повторить",
+    { timeout: 10_000 },
   );
   expect(requests).toBe(3);
   fail = false;
@@ -316,9 +384,11 @@ test("a failed background photo retries automatically without an error flash or 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await setup(page);
   let requests = 0;
+  let availableAt = Infinity;
   await page.route("**/media/chronicle-later.png?variant=display", route => {
     requests++;
-    return requests <= 2 ? route.fulfill({ status: 503, body: "temporary" }) : route.fulfill({
+    if (requests === 2) availableAt = Date.now() + 1_500;
+    return Date.now() < availableAt ? route.fulfill({ status: 503, headers: { "Retry-After": "2" }, body: "temporary" }) : route.fulfill({
       contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"/>',
     });
   });
@@ -409,15 +479,15 @@ test("named photo albums open only their own chronicle and retain the album on c
   await setup(page);
   await page.goto("/photos");
   await expect(page.getByRole("button", { name: "Хроника", exact: true })).toHaveCount(0);
-  await page.locator('.photo-albums a[href*="personId=e2e-child"]').click();
+  await page.locator('.photo-albums a[href$="/photos/e2e-child"]').click();
   await launchChronicle(page);
   const dialog = page.getByRole("dialog", { name: "Семейная хроника", exact: true });
   await expect(dialog.getByLabel("Номер снимка")).toHaveText("1 / 3");
   await expect(dialog.locator(".chronicle-caption-summary")).toContainText("1950");
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
-  await expect(page).toHaveURL(/\/photos\?personId=e2e-child$/);
+  await expect(page).toHaveURL(/\/photos\/e2e-child$/);
   await expect(page.locator(".gallery-view")).toBeVisible();
-  await page.goto("/photos?personId=e2e-spouse");
+  await page.goto("/photos/e2e-spouse");
   await expect(page.locator(".photo-grid .photo-tile")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Хроника", exact: true })).toHaveCount(0);
 });
@@ -505,7 +575,7 @@ for (const count of [0, 1, 2]) {
     await page.goto("/people/e2e-child");
     await expect(page.getByRole("button", { name: "Открыть фотоальбом человека: " + count + " фото" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Хроника", exact: true, includeHidden: true })).toHaveCount(count > 1 ? 1 : 0);
-    await page.goto("/photos?personId=e2e-child");
+    await page.goto("/photos/e2e-child");
     await expect(page.locator(".gallery-view")).toBeVisible();
     await expect(page.getByRole("button", { name: "Хроника", exact: true, includeHidden: true })).toHaveCount(count > 1 ? 1 : 0);
   });

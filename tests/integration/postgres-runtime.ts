@@ -5173,12 +5173,20 @@ try {
   await selectedFullBackup.arrayBuffer();
   assert.equal(process.env.ARCHIVE_ID, "runtime-test",
     "the worker inherits a different root archive context");
+  const selectedRetention = await fetch(securedBase + "/a/other-archive/api/backups/settings", {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json", "x-drevo-backup": "1" },
+    body: JSON.stringify({ keepCount: 2 }),
+  });
+  assert.equal(selectedRetention.status, 403);
+  assert.equal((await fetch(securedBase + "/a/other-archive/api/backups", {
+    headers: ownerHeaders,
+  }).then(response => response.json())).settings.keepCount, 5);
   const managedSelected = await fetch(securedBase + "/a/other-archive/api/backups/create", {
     method: "POST",
     headers: { ...ownerHeaders, "x-drevo-backup": "1" },
   });
   assert.equal(managedSelected.status, 202);
-  let managedStatus: { job?: { state: string; error?: string }; records?: Array<{ name: string }> } = {};
+  let managedStatus: { job?: { state: string; error?: string }; records?: Array<{ id: string; name: string }> } = {};
   for (let attempt = 0; attempt < 300; attempt++) {
     managedStatus = await fetch(securedBase + "/a/other-archive/api/backups", {
       headers: ownerHeaders,
@@ -5207,6 +5215,20 @@ try {
     managedDb.close();
     rmSync(managedSqlite, { force: true });
   }
+  const managedId = managedStatus.records![0].id;
+  assert.equal((await fetch(securedBase + `/a/other-archive/api/backups/${managedId}`, {
+    method: "DELETE", headers: { ...ownerHeaders, "x-drevo-backup": "1" },
+  })).status, 202);
+  for (let attempt = 0; attempt < 300; attempt++) {
+    managedStatus = await fetch(securedBase + "/a/other-archive/api/backups", {
+      headers: ownerHeaders,
+    }).then(response => response.json());
+    if (managedStatus.job?.state !== "running") break;
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error ?? "Deletion did not complete");
+  assert.equal(managedStatus.records?.some(record => record.id === managedId), false);
+  assert.equal(existsSync(managedFile), false, "deletion removes the selected archive's backup bytes");
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
     404,
@@ -7076,43 +7098,10 @@ try {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ publicTree, publicAlbums: false, reverseTimeline: false }),
   });
-  assert.equal((await writeVisibility(true)).status, 200);
-  let publicFamilyReached!: () => void, releasePublicFamily!: () => void;
-  const publicFamilyReady = new Promise<void>((resolve) => { publicFamilyReached = resolve; });
-  const publicFamilyGate = new Promise<void>((resolve) => { releasePublicFamily = resolve; });
-  const publicFamilyEndpoint = archiveQueryHttp({ archive: otherApp.archive,
-    auth: await createAuth(await userStore(otherApp.archive.db), otherApp.archive.db,
-      process.env.PUBLIC_ORIGIN),
-    visibility: await settingsStore(otherApp.archive.db),
-    treePreferences: treePreferencesStore(otherApp.archive.db),
-    researchCatalog: researchCatalogStore(otherApp.archive.db),
-    beforeDelivery: async () => { publicFamilyReached(); await publicFamilyGate; },
-  });
-  const publicFamilyServer = createServer((req, res) => {
-    void publicFamilyEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
-      .catch((error) => { res.destroy(error); });
-  });
-  await new Promise<void>((resolve) => publicFamilyServer.listen(0, "127.0.0.1", resolve));
-  const publicFamilyPort = (publicFamilyServer.address() as { port: number }).port;
-  const heldPublicFamily = fetch(`http://127.0.0.1:${publicFamilyPort}/api/family`);
-  try {
-    await Promise.race([publicFamilyReady,
-      heldPublicFamily.then(() => { throw new Error("Public family sent before delivery barrier"); }),
-      familyBarrierTimeout("Public family did not reach delivery barrier"),
-    ]);
-    assert.equal((await writeVisibility(false)).status, 200);
-    releasePublicFamily();
-    const deniedPublicFamily = await heldPublicFamily;
-    const deniedPublicBody = await deniedPublicFamily.json();
-    assert.equal(deniedPublicFamily.status, 409);
-    assert.equal("family" in deniedPublicBody, false);
-    assert.equal((await fetch(securedBase + "/a/other-archive/api/family")).status, 404);
-  } finally {
-    releasePublicFamily();
-    await heldPublicFamily.catch(() => {});
-    await new Promise<void>((resolve) => publicFamilyServer.close(() => resolve()));
-    assert.equal((await writeVisibility(false)).status, 200);
-  }
+
+  assert.equal((await writeVisibility(true)).status, 400);
+  assert.equal((await writeVisibility(false)).status, 200);
+  assert.equal((await fetch(securedBase+'/a/other-archive/api/family')).status,404);
   console.log("runtime_archive_query_family_delivery_revocation_ok");
   const privateSearchPerson = (await otherApp.archive.read()).family.people[0];
   assert.ok(privateSearchPerson);
@@ -7178,13 +7167,6 @@ try {
     { headers: otherOnlyHeaders })).status, 404);
   await client.query(`UPDATE archive_memberships SET approved=true
     WHERE archive_id='other-archive' AND user_id='other-only'`);
-  const setPublicTree = async (publicTree: boolean) => {
-    const response = await fetch(securedBase + "/a/other-archive/api/settings", {
-      method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ publicTree, publicAlbums: false, reverseTimeline: false }),
-    });
-    assert.equal(response.status, 200);
-  };
   assert.deepEqual([staleSearch.status, staleSearch.present, staleSearch.hasPrivatePayload],
     [409, false, false]);
   // The resource catalog is platform-shared since 091; its independent
@@ -7208,14 +7190,14 @@ try {
     { headers: otherOnlyHeaders })).status, 404);
   await client.query(`UPDATE archive_memberships SET approved=true
     WHERE archive_id='other-archive' AND user_id='other-only'`);
-  await setPublicTree(true);
-  const initialAnalysisExport = await fetch(otherBase + "/api/export.json?download=1");
+  assert.equal((await fetch(otherBase+"/api/export.json?download=1")).status,401);
+  const initialAnalysisExport = await fetch(otherBase + "/api/export.json?download=1", { headers: otherOnlyHeaders });
   assert.equal(initialAnalysisExport.status, 200);
   assert.match(initialAnalysisExport.headers.get("content-disposition") || "", /drevo-family\.json/);
   assert.ok((await initialAnalysisExport.json()).people.some(
     (person: { id: string }) => person.id === privateSearchPerson.id));
-  const staleAnalysisExport = await raceArchiveQuery("/api/export.json?download=1", undefined,
-    async () => { await setPublicTree(false); },
+  const staleAnalysisExport = await raceArchiveQuery("/api/export.json?download=1", otherOnlyHeaders,
+    async () => { await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='other-archive' AND user_id='other-only'"); },
     (body) => Array.isArray(body.people) && body.people.some(
       (person: { id: string }) => person.id === privateSearchPerson.id));
   assert.equal((await fetch(otherBase + "/api/export.json?download=1")).status, 401);
@@ -7224,6 +7206,7 @@ try {
     staleAnalysisExport.status, staleAnalysisExport.present,
     staleAnalysisExport.hasPrivatePayload, staleAnalysisExport.disposition],
   [409, false, false, null, 409, false, false, null]);
+  await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='other-archive' AND user_id='other-only'");
   console.log("runtime_archive_query_export_revocation_ok");
   const exportSnapshot = await otherApp.archive.read();
   const largeExportArchive = { ...otherApp.archive,

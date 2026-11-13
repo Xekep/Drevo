@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import {
   ChevronDown,
   ChevronUp,
@@ -70,6 +71,7 @@ export function TreeDepthLayers({
 }) {
   const host = useRef<HTMLDivElement>(null),
     renderer = useRef<SpatialRenderer | null>(null);
+  const narrow = useNarrowScreen();
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(
     "loading",
   );
@@ -254,7 +256,7 @@ export function TreeDepthLayers({
               onClick={() => void renderer.current?.fit()}
               disabled={disabled}
             >
-              <Scan size={18} />
+              {narrow ? <Scan size={20} /> : <Maximize2 size={18} />}
             </button>
             <button
               type="button"

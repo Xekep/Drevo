@@ -249,6 +249,8 @@ export async function backupCoordinator(
             ? "Создана резервная копия"
             : kind === "download"
               ? "Подготовлена копия для скачивания"
+              : kind === "delete"
+                ? "Удалена резервная копия"
               : kind === "check"
                 ? "Проверено хранилище копий"
                 : "Проверен бэкап для восстановления",
@@ -301,7 +303,7 @@ export async function backupCoordinator(
     const item = await files.create(config, signal);
     await store.add(item);
     try {
-      for (const obsolete of await store.excess(config)) {
+      for (const obsolete of await store.excess(config, item.id)) {
         signal.throwIfAborted();
         await files.remove(obsolete, signal);
         await store.forget(obsolete.id);
@@ -344,6 +346,14 @@ export async function backupCoordinator(
     record,
     withFile,
     startCreate,
+    async remove(id: string, actor: ArchiveUser, access?: BackupJobAccess) {
+      if (!options.treeOnly) throw new BackupInputError("Удаление доступно для ручных копий древа.");
+      const item = await record(id);
+      return await launch("delete", actor, async () => {
+        await files.remove(item, signal);
+        await store.forget(item.id);
+      }, false, access);
+    },
     async download<T>(
       actor: ArchiveUser,
       requestSignal: AbortSignal,

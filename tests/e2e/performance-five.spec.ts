@@ -93,13 +93,13 @@ test("paged albums keep the full viewer sequence without loading the entire coll
     if (url.searchParams.get("projection") === "page")
       fullCollections.push(response.url());
   });
-  await page.goto("/photos?personId=e2e-child");
+  await page.goto("/photos/e2e-child");
   await expect(page.locator(".photo-tile")).toHaveCount(30);
   await page.locator(".photo-tile").first().click();
   await expect(page.locator(".photo-counter")).toHaveText("1 / 75");
   await page.getByRole("button", { name: "Следующая фотография" }).click();
   await expect(page.locator(".photo-counter")).toHaveText("2 / 75");
-  await expect(page).toHaveURL(/\/photos\/paged-photo-73$/);
+  await expect(page).toHaveURL(/\/photo\/paged-photo-73$/);
   await page.getByRole("button", { name: "Закрыть просмотр фото" }).click();
   await page.locator(".load-more").scrollIntoViewIfNeeded();
   await expect(page.locator(".photo-tile")).toHaveCount(60);

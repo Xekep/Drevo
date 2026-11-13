@@ -37,7 +37,7 @@ test("full TAR restore remaps two parent citations and catalog PDF without chang
   const restores = restoreStore(target, targetPath);
   const original = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n");
   const server = createServer((_req, res) => {
-    void fullBackup(source.db, sourcePath, res).catch((error) => {
+    void fullBackup(source.db, res).catch((error) => {
       if (res.headersSent) res.destroy(error as Error);
       else { res.statusCode = 500; res.end(String(error)); }
     });
