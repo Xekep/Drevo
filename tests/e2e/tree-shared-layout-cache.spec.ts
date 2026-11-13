@@ -30,6 +30,7 @@ const calculations = (page: Page) =>
   );
 
 for (const large of [false, true]) test(`a blood projection cache miss never inherits slots from the full tree (${large ? "large" : "small"})`, async ({ page }) => {
+  test.setTimeout(90_000);
   await page.route("**/api/tree-layout", route => route.fulfill({ status: 503, json: { error: "offline" } }));
   await page.route("**/api/family?projection=overview", async route => {
     const response = await route.fetch(), data = await response.json();
@@ -61,13 +62,15 @@ for (const large of [false, true]) test(`a blood projection cache miss never inh
   }).__projectionRequests);
   await page.goto("/people/e2e-child");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  // This deliberately disables the server cache and runs real ELK in the Worker.
+  // The >200-person fixture can exceed the default 5s assertion on CI runners.
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true", { timeout: 30_000 });
   const before = await requests();
   const collapse = page.getByRole("button", { name: "Свернуть панель", exact: true });
   if (await collapse.isVisible()) await collapse.click();
   await familyViewAction(page, "Кровные");
   await expect.poll(async () => (await requests()).length).toBe(before.length + 1);
-  await expect(canvas).toHaveAttribute("data-layout-ready", "true");
+  await expect(canvas).toHaveAttribute("data-layout-ready", "true", { timeout: 30_000 });
   const blood = (await requests()).at(-1)!;
   expect(blood.people).toBeLessThan(before.at(-1)!.people);
   expect(blood.people > 200).toBe(large);
