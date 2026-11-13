@@ -78,6 +78,35 @@ async function openSample(
   return { reader, book, id: id as string };
 }
 
+test("mobile PDF search and actions share one compact toolbar at 320 and 390 pixels", async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'mobile toolbar');
+  const { book } = await openSample(page, 'Мобильная панель PDF');
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const toolbar = book.locator('.BRtoolbar');
+    await expect.poll(() => toolbar.evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(50);
+    const input = book.getByRole('searchbox', { name: 'Поиск в документе' });
+    await expect(input).toBeVisible();
+    const query = (await input.boundingBox())!;
+    const submit = (await book.getByRole('button', { name: 'Найти', exact: true }).boundingBox())!;
+    const form = (await book.getByRole('search').boundingBox())!;
+    expect(submit.x).toBeGreaterThanOrEqual(query.x + query.width);
+    expect(submit.x + submit.width).toBeLessThanOrEqual(form.x + form.width);
+    for (const name of ['О документе', 'Лупа', 'Комментарии', 'Закрыть документ']) {
+      const control = book.getByRole('button', { name, exact: true });
+      await expect(control).toBeVisible();
+      const box = (await control.boundingBox())!;
+      expect(Math.abs(box.y + box.height / 2 - query.y - query.height / 2)).toBeLessThan(5);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    expect(await toolbar.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: info.outputPath(`pdf-toolbar-${width}.png`) });
+  }
+  await book.getByRole('searchbox', { name: 'Поиск в документе' }).fill('Archive page 2');
+  await book.getByRole('searchbox', { name: 'Поиск в документе' }).press('Enter');
+  await expect(book.locator('[data-id="resultsCount"]')).toHaveText('1 / 1');
+});
+
 test("book and annotation clicks keep comments open", async ({
   page,
 }, info) => {

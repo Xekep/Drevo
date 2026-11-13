@@ -4,6 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
+import { syncBuiltinESMExports } from "node:module";
 import { backupProcess } from "../src/server/backup-process.ts";
 import {
   backupWorkerFailure,
@@ -20,6 +23,28 @@ test("worker shutdown cancellation is distinct from a backup failure and does no
   controller.abort();
   await assert.rejects(pending, /отменено/);
   assert.deepEqual(logs, []);
+});
+
+test("process cancellation does not release staging owners before the child closes", async t => {
+  const child = new EventEmitter();
+  t.mock.method(childProcess, "spawn", (() => child) as unknown as typeof childProcess.spawn);
+  syncBuiltinESMExports();
+  let settled = false;
+  const pending = backupProcess("tar", [], new AbortController().signal);
+  const rejected = assert.rejects(pending, /Не удалось запустить/).then(() => { settled = true; });
+  try {
+    child.emit("error", new Error("synthetic abort"));
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(settled, false, "error precedes actual process/stdio closure");
+    child.emit("close", null);
+    await rejected;
+  } finally {
+    child.emit("close", null);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    await rejected;
+  }
 });
 
 test("a worker deadline kills the child and reports an interruption without raw process output", async t => {

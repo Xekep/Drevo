@@ -19,6 +19,7 @@ import type { SharedTreeLayoutCache } from "./tree-layout-cache.ts";
 import { offlinePackageHttp } from "./offline-package-http.ts";
 import { coreHttp } from "./core-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
+import type { BackupCoordinator } from "./backup-coordinator.ts";
 import { placesHttp } from "./places-http.ts";
 import type { GeocodingStore } from "./geocoding.ts";
 import { publicSharingHttp } from "./public-sharing-http.ts";
@@ -87,6 +88,7 @@ export async function archiveHttp({
   pendingAi,
   tiffRenderer,
   mediaUsage,
+  backups,
 }: {
   treeLayouts?: SharedTreeLayoutCache;
   archive: Awaited<ReturnType<typeof openArchive>>;
@@ -110,6 +112,7 @@ export async function archiveHttp({
   pendingAi?: PreparationAdmission;
   tiffRenderer?: ReturnType<typeof tiffDocumentRenderer>;
   mediaUsage?: MediaUsageLedger;
+  backups?: BackupCoordinator;
 }) {
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = await aiSettingsStore(archive.db, aiSecrets);
@@ -187,7 +190,7 @@ export async function archiveHttp({
     catalog: researchCatalog,
     publicOrigin,
   });
-  const serveBackup = databaseBackupHttp({ archive, auth });
+  const serveBackup = databaseBackupHttp({ archive, auth, backups, preparation });
   const adminAccess = adminAccessHttp({
     db: archive.db,
     auth,

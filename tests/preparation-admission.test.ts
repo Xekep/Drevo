@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   preparationAdmission,
   pendingAiAdmission,
+  preparationRequest,
 } from "../src/server/preparation-admission.ts";
 import { WorkQueueBusyError } from "../src/server/work-queue.ts";
 
@@ -115,6 +118,23 @@ test("pending AI turns use an independent immediate bounded metadata budget", as
     releases.forEach((release) => release());
     pending.close();
     input.close();
+  }
+});
+
+test("request cancellation covers an earlier disconnect but not a normally finished response", () => {
+  const req = Object.assign(new EventEmitter(), { complete: true, destroyed: false, aborted: false });
+  for (const alreadyDisconnected of [true, false]) {
+    const res = Object.assign(new EventEmitter(), {
+      destroyed: alreadyDisconnected, writableFinished: !alreadyDisconnected,
+    });
+    const request = preparationRequest(req as unknown as IncomingMessage,
+      res as unknown as ServerResponse);
+    try {
+      res.emit("close");
+      assert.equal(request.signal.aborted, alreadyDisconnected);
+    } finally { request.dispose(); }
+    assert.equal(res.listenerCount("close"), 0);
+    assert.equal(req.listenerCount("aborted"), 0);
   }
 });
 

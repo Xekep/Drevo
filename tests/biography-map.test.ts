@@ -13,6 +13,21 @@ const point = (lon: number, lat: number, name = "Точка") => ({
   properties: { name, date: "1943" },
   geometry: { type: "Point" as const, coordinates: [lon, lat] },
 });
+
+test("large point collections retain 620 records and their metadata within shared coordinate limits", () => {
+  const source = { type: "FeatureCollection", features: Array.from({ length: 620 }, (_, i) => ({
+    ...point(30 + i / 1000, 50 + i / 1000, `Пункт ${i}`), id: `record-${i}`,
+    properties: { name: `Пункт ${i}`, source: { page: i, url: "https://example.org/archive" } },
+  })) };
+  const raw = JSON.stringify(source, null, 2);
+  assert.ok(raw.length > 100_000);
+  const parsed = parseBiographyMap(raw);
+  assert.equal(parsed.features.length, 620);
+  assert.deepEqual(parsed.features, source.features);
+  assert.throws(() => parseBiographyMap(JSON.stringify({ type: "FeatureCollection",
+    features: Array.from({ length: 2001 }, () => ({ type: "Feature", geometry: null, properties: {} })),
+  })), /2000 объектов/);
+});
 test("biography maps retain geographic order, captions, dates and imported paths", () => {
   const source = {
     type: "FeatureCollection",

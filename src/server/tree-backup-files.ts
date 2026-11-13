@@ -19,7 +19,8 @@ export function sanitizeTreeBackup(file: string) {
 
 /** Read only this archive's snapshot. Hard links pin committed originals while
  * TAR streams; a concurrent deletion before pinning fails the entire copy. */
-export async function stageTreeBackupFiles(snapshot: string, root: string, destination: string) {
+export async function stageTreeBackupFiles(snapshot: string, root: string, destination: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const db = new DatabaseSync(snapshot, { readOnly: true });
   const names = new Set<string>();
   const expected = new Map<string, number>();
@@ -66,6 +67,7 @@ export async function stageTreeBackupFiles(snapshot: string, root: string, desti
   } finally { db.close(); }
   await mkdir(destination, { recursive: true, mode: 0o700 });
   for (const name of names) {
+    signal?.throwIfAborted();
     const source = join(root, "uploads", name), target = join(destination, name);
     const info = await lstat(source);
     if (!info.isFile() || (expected.has(name) && expected.get(name) !== info.size))
