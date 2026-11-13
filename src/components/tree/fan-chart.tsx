@@ -55,6 +55,60 @@ function clipped(value: string, limit: number) {
   return clean.length <= limit ? clean : `${clean.slice(0, limit - 1)}…`;
 }
 
+/** Fit labels to the sector itself rather than hiding fields by generation. */
+function SectorDetails({ person, life, showNames, showYears, inner, outer, angle, radial, transform }: {
+  person: Family["people"][number]; life: string; showNames: boolean; showYears: boolean;
+  inner: number; outer: number; angle: number; radial: boolean; transform: string;
+}) {
+  const text = useRef<SVGTextElement>(null);
+  const radius = (inner + outer) / 2, padding = 8, lineHeight = 14;
+  const tangent = Math.tan(angle * Math.PI / 360);
+  const height = radial ? 2 * (inner + padding) * tangent - 2 * padding : outer - inner - 2 * padding;
+  const capacity = Math.max(0, Math.min(4, Math.floor(height / lineHeight)));
+  const names = showNames ? [person.surname, person.name, person.patronymic].filter(Boolean) : [];
+  const withYears = capacity > 0 && showYears && Boolean(life) && (!names.length || capacity > 1);
+  const lines = names.slice(0, capacity - Number(withYears)).map(value => ({ value: value!.trim(), years: false }));
+  if (withYears) lines.push({ value: life, years: true });
+  const blockHeight = Math.max(1, lines.length) * lineHeight;
+  const width = radial
+    ? Math.min(outer - inner - 2 * padding,
+        2 * (Math.sqrt((outer - padding) ** 2 - (blockHeight / 2) ** 2) - radius))
+    : 2 * Math.min((radius - blockHeight / 2) * tangent - padding,
+        Math.sqrt((outer - padding) ** 2 - (radius + blockHeight / 2) ** 2));
+  const contents = lines.map(line => line.value).join("\0");
+  useLayoutEffect(() => {
+    const element = text.current;
+    if (!element) return;
+    const fit = () => {
+      [...element.querySelectorAll("tspan")].forEach((span, index) => {
+        const value = contents.split("\0")[index];
+        span.textContent = value;
+        if (span.getComputedTextLength() <= width) return;
+        const characters = Array.from(value);
+        let low = 0, high = characters.length;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          span.textContent = characters.slice(0, middle).join("") + "…";
+          if (span.getComputedTextLength() <= width) low = middle;
+          else high = middle - 1;
+        }
+        span.textContent = characters.slice(0, low).join("") + "…";
+      });
+    };
+    fit();
+    let active = true;
+    void document.fonts.ready.then(() => { if (active) fit(); });
+    return () => { active = false; };
+  }, [contents, width]);
+  return <text ref={text} className="fan-sector-label" transform={transform}
+    data-label-orientation={radial ? "radial" : "tangential"}
+    textAnchor="middle" dominantBaseline="middle" aria-hidden="true">
+    {lines.map((line, index) => <tspan key={index} x="0"
+      y={(index - (lines.length - 1) / 2) * lineHeight}
+      className={line.years ? "fan-sector-years" : undefined}>{line.value}</tspan>)}
+  </text>;
+}
+
 export function FanChart({
   family,
   anchorId,
@@ -220,7 +274,11 @@ export function FanChart({
                 </>
               )}
               {person ? <title>{fullName(person)}</title> : null}
-              {person && (showNames || showYears) ? (
+              {person && (showNames || showYears) && slot.generation >= 2 && !portrait ? (
+                <SectorDetails person={person} life={life} showNames={showNames} showYears={showYears}
+                  inner={inner} outer={outer} angle={angle} radial={denseLabel}
+                  transform={`translate(${label.x} ${label.y}) rotate(${rotation})`} />
+              ) : person && (showNames || showYears) ? (
                 <text
                   className="fan-sector-label"
                   data-label-orientation={denseLabel ? "radial" : "tangential"}
