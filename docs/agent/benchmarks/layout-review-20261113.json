@@ -1,0 +1,1532 @@
+{
+  "date": "2026-11-13",
+  "main": "3abecce4317d5b30eacd6a8a04a4151d20b046b8",
+  "originalPr": "0f22aa6909637505c598d7dc3a60064898064f75",
+  "card": {
+    "width": 220,
+    "height": 264
+  },
+  "summary": {
+    "comparisons": 32,
+    "unchanged": 26,
+    "improved": 6,
+    "regressed": 0
+  },
+  "notes": [
+    "Comparison uses actual main source, not a mock baseline.",
+    "Only full private-archive timings were measured as a dedicated pair; all other timings are omitted.",
+    "Two requested blood-and-partner projections have byte-identical layout inputs and cache keys.",
+    "Full-to-projection transition matches cold geometry for main and proposed in both directions.",
+    "No private names, identifiers, coordinates or topology are included."
+  ],
+  "cases": [
+    {
+      "fixture": "branch-1001",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 1001,
+        "primaryRelations": 1500,
+        "primaryCrossings": 0,
+        "allCrossings": 0,
+        "allContacts": 0,
+        "allLength": 644026,
+        "width": 133274,
+        "height": 3119,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 58537,
+          "single": 0,
+          "maxOffset": 17026,
+          "interleavings": 0,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 1
+      },
+      "proposed": {
+        "people": 1001,
+        "primaryRelations": 1500,
+        "primaryCrossings": 0,
+        "allCrossings": 0,
+        "allContacts": 0,
+        "allLength": 644026,
+        "width": 133274,
+        "height": 3119,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 58537,
+          "single": 0,
+          "maxOffset": 17026,
+          "interleavings": 0,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 1
+      }
+    },
+    {
+      "fixture": "branch-3000",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 3000,
+        "primaryRelations": 4498,
+        "primaryCrossings": 0,
+        "allCrossings": 0,
+        "allContacts": 0,
+        "allLength": 2312178,
+        "width": 400738,
+        "height": 3839,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 135284,
+          "single": 126,
+          "maxOffset": 31750,
+          "interleavings": 0,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 1
+      },
+      "proposed": {
+        "people": 3000,
+        "primaryRelations": 4498,
+        "primaryCrossings": 0,
+        "allCrossings": 0,
+        "allContacts": 0,
+        "allLength": 2312178,
+        "width": 400738,
+        "height": 3839,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 135284,
+          "single": 126,
+          "maxOffset": 31750,
+          "interleavings": 0,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 1
+      }
+    },
+    {
+      "fixture": "cross-1",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 5,
+        "allCrossings": 5,
+        "allContacts": 5,
+        "allLength": 21979,
+        "width": 4981,
+        "height": 2051,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 3255,
+          "single": 0,
+          "maxOffset": 662,
+          "interleavings": 3,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 5,
+        "allCrossings": 5,
+        "allContacts": 5,
+        "allLength": 21979,
+        "width": 4981,
+        "height": 2051,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 3255,
+          "single": 0,
+          "maxOffset": 662,
+          "interleavings": 3,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-1",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 5,
+        "allCrossings": 5,
+        "allContacts": 5,
+        "allLength": 21979,
+        "width": 4981,
+        "height": 2051,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 3255,
+          "single": 0,
+          "maxOffset": 662,
+          "interleavings": 3,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 5,
+        "allCrossings": 5,
+        "allContacts": 5,
+        "allLength": 21979,
+        "width": 4981,
+        "height": 2051,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 3255,
+          "single": 0,
+          "maxOffset": 662,
+          "interleavings": 3,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-14",
+      "reverse": false,
+      "sameGeometry": false,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 13,
+        "allCrossings": 13,
+        "allContacts": 13,
+        "allLength": 29788,
+        "width": 5012,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 6211.5,
+          "single": 0,
+          "maxOffset": 1332,
+          "interleavings": 15,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 9,
+        "allCrossings": 9,
+        "allContacts": 9,
+        "allLength": 25692,
+        "width": 4760,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 5659,
+          "single": 0,
+          "maxOffset": 930,
+          "interleavings": 11,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-14",
+      "reverse": true,
+      "sameGeometry": false,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 13,
+        "allCrossings": 13,
+        "allContacts": 13,
+        "allLength": 29788,
+        "width": 5012,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 6211.5,
+          "single": 0,
+          "maxOffset": 1332,
+          "interleavings": 15,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 9,
+        "allCrossings": 9,
+        "allContacts": 9,
+        "allLength": 25692,
+        "width": 4760,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 5659,
+          "single": 0,
+          "maxOffset": 930,
+          "interleavings": 11,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-21",
+      "reverse": false,
+      "sameGeometry": false,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 10,
+        "allCrossings": 10,
+        "allContacts": 10,
+        "allLength": 28083,
+        "width": 4949,
+        "height": 2075,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 5620,
+          "single": 0,
+          "maxOffset": 1182.5,
+          "interleavings": 13,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 8,
+        "allCrossings": 8,
+        "allContacts": 8,
+        "allLength": 24501.5,
+        "width": 4949,
+        "height": 2051,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 3882.75,
+          "single": 0,
+          "maxOffset": 883,
+          "interleavings": 9,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-21",
+      "reverse": true,
+      "sameGeometry": false,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 10,
+        "allCrossings": 10,
+        "allContacts": 10,
+        "allLength": 28083,
+        "width": 4949,
+        "height": 2075,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 5620,
+          "single": 0,
+          "maxOffset": 1182.5,
+          "interleavings": 13,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 8,
+        "allCrossings": 8,
+        "allContacts": 8,
+        "allLength": 24501.5,
+        "width": 4949,
+        "height": 2051,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 3882.75,
+          "single": 0,
+          "maxOffset": 883,
+          "interleavings": 9,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-7",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 9,
+        "allCrossings": 9,
+        "allContacts": 9,
+        "allLength": 25456,
+        "width": 4910,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4343,
+          "single": 0,
+          "maxOffset": 804,
+          "interleavings": 10,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 9,
+        "allCrossings": 9,
+        "allContacts": 9,
+        "allLength": 25456,
+        "width": 4910,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4343,
+          "single": 0,
+          "maxOffset": 804,
+          "interleavings": 10,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      }
+    },
+    {
+      "fixture": "cross-7",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 9,
+        "allCrossings": 9,
+        "allContacts": 9,
+        "allLength": 25456,
+        "width": 4910,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4343,
+          "single": 0,
+          "maxOffset": 804,
+          "interleavings": 10,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 9,
+        "allCrossings": 9,
+        "allContacts": 9,
+        "allLength": 25456,
+        "width": 4910,
+        "height": 2087,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4343,
+          "single": 0,
+          "maxOffset": 804,
+          "interleavings": 10,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      }
+    },
+    {
+      "fixture": "cross-8",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 7,
+        "allCrossings": 7,
+        "allContacts": 7,
+        "allLength": 22778,
+        "width": 5091,
+        "height": 2063,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4734,
+          "single": 0,
+          "maxOffset": 859.5,
+          "interleavings": 6,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 7,
+        "allCrossings": 7,
+        "allContacts": 7,
+        "allLength": 22778,
+        "width": 5091,
+        "height": 2063,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4734,
+          "single": 0,
+          "maxOffset": 859.5,
+          "interleavings": 6,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "cross-8",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 7,
+        "allCrossings": 7,
+        "allContacts": 7,
+        "allLength": 22778,
+        "width": 5091,
+        "height": 2063,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4734,
+          "single": 0,
+          "maxOffset": 859.5,
+          "interleavings": 6,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 54,
+        "primaryRelations": 99,
+        "primaryCrossings": 7,
+        "allCrossings": 7,
+        "allContacts": 7,
+        "allLength": 22778,
+        "width": 5091,
+        "height": 2063,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 4734,
+          "single": 0,
+          "maxOffset": 859.5,
+          "interleavings": 6,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 8
+      }
+    },
+    {
+      "fixture": "dense-1",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 194,
+        "primaryRelations": 423,
+        "primaryCrossings": 202,
+        "allCrossings": 202,
+        "allContacts": 202,
+        "allLength": 424689.5,
+        "width": 22890,
+        "height": 1943,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 62435,
+          "single": 0,
+          "maxOffset": 6336.5,
+          "interleavings": 160,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 194,
+        "primaryRelations": 423,
+        "primaryCrossings": 202,
+        "allCrossings": 202,
+        "allContacts": 202,
+        "allLength": 424689.5,
+        "width": 22890,
+        "height": 1943,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 62435,
+          "single": 0,
+          "maxOffset": 6336.5,
+          "interleavings": 160,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      }
+    },
+    {
+      "fixture": "dense-1",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 194,
+        "primaryRelations": 423,
+        "primaryCrossings": 202,
+        "allCrossings": 202,
+        "allContacts": 202,
+        "allLength": 424957.5,
+        "width": 22890,
+        "height": 1943,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 62612,
+          "single": 0,
+          "maxOffset": 6395.5,
+          "interleavings": 160,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 194,
+        "primaryRelations": 423,
+        "primaryCrossings": 202,
+        "allCrossings": 202,
+        "allContacts": 202,
+        "allLength": 424957.5,
+        "width": 22890,
+        "height": 1943,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 62612,
+          "single": 0,
+          "maxOffset": 6395.5,
+          "interleavings": 160,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      }
+    },
+    {
+      "fixture": "dense-7",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 158,
+        "primaryRelations": 342,
+        "primaryCrossings": 106,
+        "allCrossings": 106,
+        "allContacts": 106,
+        "allLength": 257553,
+        "width": 16990,
+        "height": 1904,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 38448.5,
+          "single": 0,
+          "maxOffset": 4015,
+          "interleavings": 87,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 158,
+        "primaryRelations": 342,
+        "primaryCrossings": 106,
+        "allCrossings": 106,
+        "allContacts": 106,
+        "allLength": 257553,
+        "width": 16990,
+        "height": 1904,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 38448.5,
+          "single": 0,
+          "maxOffset": 4015,
+          "interleavings": 87,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      }
+    },
+    {
+      "fixture": "dense-7",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 158,
+        "primaryRelations": 342,
+        "primaryCrossings": 106,
+        "allCrossings": 106,
+        "allContacts": 106,
+        "allLength": 257553,
+        "width": 16990,
+        "height": 1904,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 38448.5,
+          "single": 0,
+          "maxOffset": 4015,
+          "interleavings": 87,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      },
+      "proposed": {
+        "people": 158,
+        "primaryRelations": 342,
+        "primaryCrossings": 106,
+        "allCrossings": 106,
+        "allContacts": 106,
+        "allLength": 257553,
+        "width": 16990,
+        "height": 1904,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 38448.5,
+          "single": 0,
+          "maxOffset": 4015,
+          "interleavings": 87,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 7
+      }
+    },
+    {
+      "fixture": "private-full",
+      "reverse": false,
+      "sameGeometry": false,
+      "main": {
+        "people": 282,
+        "primaryRelations": 445,
+        "primaryCrossings": 10,
+        "allCrossings": 17,
+        "allContacts": 27,
+        "allLength": 171558,
+        "width": 19003,
+        "height": 5680,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 26227.5,
+          "single": 14392,
+          "maxOffset": 5200,
+          "interleavings": 11,
+          "lineageDrift": 577.6666666666666,
+          "lineageSpan": 630
+        },
+        "elkCalls": 15,
+        "coldMs": 12968
+      },
+      "proposed": {
+        "people": 282,
+        "primaryRelations": 445,
+        "primaryCrossings": 4,
+        "allCrossings": 11,
+        "allContacts": 21,
+        "allLength": 162686.5,
+        "width": 20406,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 21557,
+          "single": 11441,
+          "maxOffset": 3265,
+          "interleavings": 2,
+          "lineageDrift": 622,
+          "lineageSpan": 630
+        },
+        "elkCalls": 16,
+        "coldMs": 15809
+      }
+    },
+    {
+      "fixture": "private-full",
+      "reverse": true,
+      "sameGeometry": false,
+      "main": {
+        "people": 282,
+        "primaryRelations": 445,
+        "primaryCrossings": 10,
+        "allCrossings": 17,
+        "allContacts": 27,
+        "allLength": 171558,
+        "width": 19003,
+        "height": 5680,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 26227.5,
+          "single": 14392,
+          "maxOffset": 5200,
+          "interleavings": 11,
+          "lineageDrift": 577.6666666666666,
+          "lineageSpan": 630
+        },
+        "elkCalls": 15,
+        "coldMs": 12042
+      },
+      "proposed": {
+        "people": 282,
+        "primaryRelations": 445,
+        "primaryCrossings": 4,
+        "allCrossings": 11,
+        "allContacts": 21,
+        "allLength": 162686.5,
+        "width": 20406,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 21557,
+          "single": 11441,
+          "maxOffset": 3265,
+          "interleavings": 2,
+          "lineageDrift": 622,
+          "lineageSpan": 630
+        },
+        "elkCalls": 16,
+        "coldMs": 15516
+      }
+    },
+    {
+      "fixture": "random-5-2",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 265,
+        "primaryRelations": 588,
+        "primaryCrossings": 349,
+        "allCrossings": 349,
+        "allContacts": 353,
+        "allLength": 525630,
+        "width": 28052,
+        "height": 2435,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 79835,
+          "single": 0,
+          "maxOffset": 4010,
+          "interleavings": 304,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 265,
+        "primaryRelations": 588,
+        "primaryCrossings": 349,
+        "allCrossings": 349,
+        "allContacts": 353,
+        "allLength": 525630,
+        "width": 28052,
+        "height": 2435,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 79835,
+          "single": 0,
+          "maxOffset": 4010,
+          "interleavings": 304,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-2",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 265,
+        "primaryRelations": 588,
+        "primaryCrossings": 349,
+        "allCrossings": 349,
+        "allContacts": 353,
+        "allLength": 525630,
+        "width": 28052,
+        "height": 2435,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 79835,
+          "single": 0,
+          "maxOffset": 4010,
+          "interleavings": 304,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 265,
+        "primaryRelations": 588,
+        "primaryCrossings": 349,
+        "allCrossings": 349,
+        "allContacts": 353,
+        "allLength": 525630,
+        "width": 28052,
+        "height": 2435,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 79835,
+          "single": 0,
+          "maxOffset": 4010,
+          "interleavings": 304,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-3",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 275,
+        "primaryRelations": 612,
+        "primaryCrossings": 367,
+        "allCrossings": 367,
+        "allContacts": 367,
+        "allLength": 821918,
+        "width": 33473,
+        "height": 2459,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 90647,
+          "single": 0,
+          "maxOffset": 6428,
+          "interleavings": 336,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 275,
+        "primaryRelations": 612,
+        "primaryCrossings": 367,
+        "allCrossings": 367,
+        "allContacts": 367,
+        "allLength": 821918,
+        "width": 33473,
+        "height": 2459,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 90647,
+          "single": 0,
+          "maxOffset": 6428,
+          "interleavings": 336,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-3",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 275,
+        "primaryRelations": 612,
+        "primaryCrossings": 367,
+        "allCrossings": 367,
+        "allContacts": 367,
+        "allLength": 821918,
+        "width": 33473,
+        "height": 2459,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 90647,
+          "single": 0,
+          "maxOffset": 6428,
+          "interleavings": 336,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 275,
+        "primaryRelations": 612,
+        "primaryCrossings": 367,
+        "allCrossings": 367,
+        "allContacts": 367,
+        "allLength": 821918,
+        "width": 33473,
+        "height": 2459,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 90647,
+          "single": 0,
+          "maxOffset": 6428,
+          "interleavings": 336,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-4",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 230,
+        "primaryRelations": 508,
+        "primaryCrossings": 198,
+        "allCrossings": 198,
+        "allContacts": 198,
+        "allLength": 491733,
+        "width": 26770,
+        "height": 2327,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 91756.5,
+          "single": 0,
+          "maxOffset": 5430,
+          "interleavings": 151,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 230,
+        "primaryRelations": 508,
+        "primaryCrossings": 198,
+        "allCrossings": 198,
+        "allContacts": 198,
+        "allLength": 491733,
+        "width": 26770,
+        "height": 2327,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 91756.5,
+          "single": 0,
+          "maxOffset": 5430,
+          "interleavings": 151,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-4",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 230,
+        "primaryRelations": 508,
+        "primaryCrossings": 197,
+        "allCrossings": 197,
+        "allContacts": 197,
+        "allLength": 491229,
+        "width": 26770,
+        "height": 2327,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 91756.5,
+          "single": 0,
+          "maxOffset": 5430,
+          "interleavings": 151,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 230,
+        "primaryRelations": 508,
+        "primaryCrossings": 197,
+        "allCrossings": 197,
+        "allContacts": 197,
+        "allLength": 491229,
+        "width": 26770,
+        "height": 2327,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 91756.5,
+          "single": 0,
+          "maxOffset": 5430,
+          "interleavings": 151,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-5",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 202,
+        "primaryRelations": 447,
+        "primaryCrossings": 177,
+        "allCrossings": 177,
+        "allContacts": 182,
+        "allLength": 423087,
+        "width": 21420,
+        "height": 2315,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 56814.5,
+          "single": 0,
+          "maxOffset": 6675.5,
+          "interleavings": 167,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 202,
+        "primaryRelations": 447,
+        "primaryCrossings": 177,
+        "allCrossings": 177,
+        "allContacts": 182,
+        "allLength": 423087,
+        "width": 21420,
+        "height": 2315,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 56814.5,
+          "single": 0,
+          "maxOffset": 6675.5,
+          "interleavings": 167,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-5",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 202,
+        "primaryRelations": 447,
+        "primaryCrossings": 177,
+        "allCrossings": 177,
+        "allContacts": 182,
+        "allLength": 423087,
+        "width": 21420,
+        "height": 2315,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 56814.5,
+          "single": 0,
+          "maxOffset": 6675.5,
+          "interleavings": 167,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 202,
+        "primaryRelations": 447,
+        "primaryCrossings": 177,
+        "allCrossings": 177,
+        "allContacts": 182,
+        "allLength": 423087,
+        "width": 21420,
+        "height": 2315,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 56814.5,
+          "single": 0,
+          "maxOffset": 6675.5,
+          "interleavings": 167,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-6",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 257,
+        "primaryRelations": 570,
+        "primaryCrossings": 325,
+        "allCrossings": 325,
+        "allContacts": 327,
+        "allLength": 487858,
+        "width": 26632,
+        "height": 2507,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 67428,
+          "single": 0,
+          "maxOffset": 5290,
+          "interleavings": 291,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 257,
+        "primaryRelations": 570,
+        "primaryCrossings": 325,
+        "allCrossings": 325,
+        "allContacts": 327,
+        "allLength": 487858,
+        "width": 26632,
+        "height": 2507,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 67428,
+          "single": 0,
+          "maxOffset": 5290,
+          "interleavings": 291,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-6",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 257,
+        "primaryRelations": 570,
+        "primaryCrossings": 325,
+        "allCrossings": 325,
+        "allContacts": 327,
+        "allLength": 487858,
+        "width": 26632,
+        "height": 2507,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 67428,
+          "single": 0,
+          "maxOffset": 5290,
+          "interleavings": 291,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 257,
+        "primaryRelations": 570,
+        "primaryCrossings": 325,
+        "allCrossings": 325,
+        "allContacts": 327,
+        "allLength": 487858,
+        "width": 26632,
+        "height": 2507,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 67428,
+          "single": 0,
+          "maxOffset": 5290,
+          "interleavings": 291,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-7",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 242,
+        "primaryRelations": 538,
+        "primaryCrossings": 259,
+        "allCrossings": 259,
+        "allContacts": 262,
+        "allLength": 616287,
+        "width": 28046,
+        "height": 2432,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 113551,
+          "single": 0,
+          "maxOffset": 7036,
+          "interleavings": 194,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 242,
+        "primaryRelations": 538,
+        "primaryCrossings": 259,
+        "allCrossings": 259,
+        "allContacts": 262,
+        "allLength": 616287,
+        "width": 28046,
+        "height": 2432,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 113551,
+          "single": 0,
+          "maxOffset": 7036,
+          "interleavings": 194,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "random-5-7",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 242,
+        "primaryRelations": 538,
+        "primaryCrossings": 259,
+        "allCrossings": 259,
+        "allContacts": 262,
+        "allLength": 616287,
+        "width": 28046,
+        "height": 2432,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 113551,
+          "single": 0,
+          "maxOffset": 7036,
+          "interleavings": 194,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 242,
+        "primaryRelations": 538,
+        "primaryCrossings": 259,
+        "allCrossings": 259,
+        "allContacts": 262,
+        "allLength": 616287,
+        "width": 28046,
+        "height": 2432,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 113551,
+          "single": 0,
+          "maxOffset": 7036,
+          "interleavings": 194,
+          "lineageDrift": 0,
+          "lineageSpan": 0
+        },
+        "elkCalls": 15
+      }
+    },
+    {
+      "fixture": "private-projection",
+      "reverse": false,
+      "sameGeometry": true,
+      "main": {
+        "people": 256,
+        "primaryRelations": 411,
+        "primaryCrossings": 2,
+        "allCrossings": 6,
+        "allContacts": 21,
+        "allLength": 160347,
+        "width": 19344,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 18996.5,
+          "single": 6739,
+          "maxOffset": 2973.5,
+          "interleavings": 4,
+          "lineageDrift": 567,
+          "lineageSpan": 630
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 256,
+        "primaryRelations": 411,
+        "primaryCrossings": 2,
+        "allCrossings": 6,
+        "allContacts": 21,
+        "allLength": 160347,
+        "width": 19344,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 18996.5,
+          "single": 6739,
+          "maxOffset": 2973.5,
+          "interleavings": 4,
+          "lineageDrift": 567,
+          "lineageSpan": 630
+        },
+        "elkCalls": 16
+      }
+    },
+    {
+      "fixture": "private-projection",
+      "reverse": true,
+      "sameGeometry": true,
+      "main": {
+        "people": 256,
+        "primaryRelations": 411,
+        "primaryCrossings": 2,
+        "allCrossings": 6,
+        "allContacts": 21,
+        "allLength": 160347,
+        "width": 19344,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 18996.5,
+          "single": 6739,
+          "maxOffset": 2973.5,
+          "interleavings": 4,
+          "lineageDrift": 567,
+          "lineageSpan": 630
+        },
+        "elkCalls": 15
+      },
+      "proposed": {
+        "people": 256,
+        "primaryRelations": 411,
+        "primaryCrossings": 2,
+        "allCrossings": 6,
+        "allContacts": 21,
+        "allLength": 160347,
+        "width": 19344,
+        "height": 5656,
+        "cardHits": 0,
+        "overlaps": 0,
+        "axes": {
+          "offset": 18996.5,
+          "single": 6739,
+          "maxOffset": 2973.5,
+          "interleavings": 4,
+          "lineageDrift": 567,
+          "lineageSpan": 630
+        },
+        "elkCalls": 16
+      }
+    }
+  ]
+}

@@ -2,6 +2,9 @@ import type { ElkNode } from "elkjs";
 import type { TreeGeometry } from "./tree-layout.ts";
 import { solveBoundedSat } from "./bounded-sat.ts";
 
+/** Distinguish this proposal from legacy model-order ELK passes in traces. */
+export const JOINT_UNION_LAYOUT_ID = "joint-union-order";
+
 export type JointUnionOrder = {
   order: ReadonlyMap<string, number>;
   flippedPairs: ReadonlySet<string>;

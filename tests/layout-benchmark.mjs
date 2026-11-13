@@ -25,6 +25,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { unionGeometry } from "../src/domain/union-layout.ts";
+import { JOINT_UNION_LAYOUT_ID } from "../src/domain/joint-union-order.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "../src/domain/union-order.ts";
 import { routingQuality } from "../src/domain/routing-quality.ts";
 import { familyAxisQuality } from "../src/domain/family-axis.ts";
@@ -391,7 +392,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
   const completedSeeds = new Set();
   const layout = async (graph) => {
     if (wholeTreeSearch === "baseline" &&
-      graph.layoutOptions?.["elk.layered.crossingMinimization.forceNodeModelOrder"] === "true")
+      graph.id === JOINT_UNION_LAYOUT_ID)
       throw new Error("skip whole-tree trial for baseline measurement");
     const seed = Number(graph.layoutOptions?.["elk.randomSeed"]);
     if (disableCompact && graph.layoutOptions?.["elk.layered.layering.strategy"] === "MIN_WIDTH")

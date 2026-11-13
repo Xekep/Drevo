@@ -21,7 +21,7 @@ import { optimizeBranches } from "./branch-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { shortenFamilyRows } from "./family-row-shortening.ts";
 import { finishColdFamilyLayout, preferColdFamilyLayout, preferJointUnionLayout, refineFinalCoupleOrder } from "./family-layout-candidates.ts";
-import { jointUnionOrder } from "./joint-union-order.ts";
+import { JOINT_UNION_LAYOUT_ID, jointUnionOrder } from "./joint-union-order.ts";
 import { canUseFamilyLayoutHistory } from "./family-layout-history.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { presetGenerationLayers } from "./union-layers.ts";
@@ -1254,35 +1254,10 @@ export async function unionGeometry(
     result = optimizeFinalFamilyBranches(result, people, links, size, finalScore);
     result = refineFinalCoupleOrder(result, people, links, size, finalScore);
     result = shortenFamilyRows(result, people, links, size, finalScore);
-    // Final moves can reroute one child away from its siblings. Share corridors
-    // after every placement pass, while preserving the accepted card positions.
     return bundleFamilyBranches(result);
   };
   best = finish(best);
   const baseline = best;
-  if (jointGraph && geometryQuality(best).crossings) {
-    try {
-      const plan = jointUnionOrder(jointGraph, best);
-      if (plan) {
-        const placed = await geometryForSeed(people, graph => layout({
-          ...graph,
-          children: [...graph.children!].sort((a, b) => plan.order.get(a.id)! - plan.order.get(b.id)!),
-          layoutOptions: { ...graph.layoutOptions,
-            "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
-            "elk.layered.thoroughness": "1",
-          },
-        }), reverse, links, 1, size, false, undefined, plan.flippedPairs);
-        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
-        const nextExtent = extent(candidate), oldExtent = extent(best);
-        if (Math.max(nextExtent.width, nextExtent.height) <=
-          Math.max(oldExtent.width, oldExtent.height) * 1.4 &&
-          nextExtent.width * nextExtent.height <= oldExtent.width * oldExtent.height * 1.5 &&
-          preferJointUnionLayout(candidate, best, size, finalScore)) return candidate;
-      }
-    } catch {
-      // A failed model or speculative placement cannot discard the complete baseline.
-    }
-  }
   // Model-ordered scores do not predict independent placements. First solve
   // the bounded free-order portfolio; only two promising results receive the
   // expensive family passes. Final acceptance always compares complete scenes.
@@ -1317,5 +1292,32 @@ export async function unionGeometry(
       }
     }
   }
-  return best;
+  // Preserve the complete incumbent pipeline, including its free-order portfolio.
+  // A speculative order must beat its final bundled scene, not an earlier seed.
+  const complete = best;
+  if (jointGraph && geometryQuality(complete).crossings) {
+    try {
+      const plan = jointUnionOrder(jointGraph, complete);
+      if (plan) {
+        const placed = await geometryForSeed(people, graph => layout({
+          ...graph,
+          id: JOINT_UNION_LAYOUT_ID,
+          children: [...graph.children!].sort((a, b) => plan.order.get(a.id)! - plan.order.get(b.id)!),
+          layoutOptions: { ...graph.layoutOptions,
+            "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
+            "elk.layered.thoroughness": "1",
+          },
+        }), reverse, links, 1, size, false, undefined, plan.flippedPairs);
+        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
+        const nextExtent = extent(candidate), oldExtent = extent(complete);
+        if (Math.max(nextExtent.width, nextExtent.height) <=
+          Math.max(oldExtent.width, oldExtent.height) * 1.4 &&
+          nextExtent.width * nextExtent.height <= oldExtent.width * oldExtent.height * 1.5 &&
+          preferJointUnionLayout(candidate, complete, size, finalScore)) return candidate;
+      }
+    } catch {
+      // A failed model or speculative placement cannot discard the complete baseline.
+    }
+  }
+  return complete;
 }

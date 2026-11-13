@@ -122,14 +122,14 @@ function productionWorker() {
 }
 
 test("production worker runs the bounded joint family order in both directions", { timeout: 15000 }, async () => {
-  const worker = productionWorker(), data = crossBranchMarriages(7), size = treeNodeSize();
+  const worker = productionWorker(), data = crossBranchMarriages(21), size = treeNodeSize();
   const score = createGeometryContactScorer(size.width, size.height);
   try {
     for (const reverse of [false, true]) {
       const result = await calculate(worker, "generations", reverse, data, "portrait");
       assert.equal(result.error, undefined);
       assert.equal(result.positions.length, data.length);
-      assert.ok(score.quality(result).crossings <= 9);
+      assert.equal(score.quality(result).crossings, 8);
       assert.equal(score.cardContacts(result), 0);
       assert.equal(score.cardOverlaps(result), 0);
     }
