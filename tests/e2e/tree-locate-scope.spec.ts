@@ -184,6 +184,12 @@ test("locating a person excluded by the research filter leaves the camera and an
   await assistant.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(page.getByRole("group", { name: "Сводка выборки древа" })).toContainText("Выборка: 1 из");
   await assistant.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-people", "1");
+  // The summary precedes the worker result and the camera's fit to this one
+  // person. Capture the baseline only after that independent navigation ends.
+  await expect.poll(() => page.locator(".react-flow__viewport").evaluate(
+    element => new DOMMatrix(getComputedStyle(element).transform).a,
+  )).toBe(1);
   await searchPerson(page, "Мария", /Тестова Мария/);
   await expect(page.locator('.flow-person[data-person-id="e2e-sibling"]')).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-layout-settling/);
