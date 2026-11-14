@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
+import { e2eFamily } from "./base-family";
 
 test("large tree grows at overview scale before flying to the account person", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -80,6 +81,11 @@ test("ordinary tree loads portraits before the first growth frame", async ({ pag
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
+    // Other suites add people to the shared server. Keep this DOM-portrait
+    // scenario compact: distant overview deliberately has no avatar <img>.
+    data.family = e2eFamily({ ...data.family, unions: [], photos: [] });
+    data.partial = false;
+    data.user.personId = null;
     data.family.people.find((person: { id: string }) => person.id === "e2e-child")
       .photo = "/media/growth-portrait.jpg";
     await route.fulfill({ response, json: data });
@@ -111,6 +117,7 @@ test("ordinary tree loads portraits before the first growth frame", async ({ pag
   });
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).toHaveClass(/is-growing/);
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-people", "6");
   const samples = await page.evaluate(() => (
     window as typeof window & { __portraitGrowthSamples: Array<{
       growing: boolean; loaded: boolean; image: boolean;
