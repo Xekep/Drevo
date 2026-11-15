@@ -148,10 +148,16 @@ export function preferJointUnionLayout(
   score: FamilyRowScore,
 ) {
   const next = score(candidate), before = score(current);
-  if (!familyRowNoWorse(next, before) || next.length > before.length ||
-    before.crossings - next.crossings < Math.max(1, before.crossings * 0.2)) return false;
   const a = familyAxisQuality(candidate, size), b = familyAxisQuality(current, size);
-  if (a.interleavings > b.interleavings || a.offset > b.offset + 0.01 ||
+  // A wider generation can improve both crossings and interleaving while
+  // spreading several parents slightly. Bound that total spread, and never
+  // trade the worst family or a straight lineage for a better aggregate score.
+  const lessInterleaving = a.interleavings < b.interleavings &&
+    next.crossings < before.crossings && a.offset <= b.offset * 1.15 + 0.01;
+  if (!familyRowNoWorse(next, before) ||
+    next.length > before.length * (lessInterleaving ? 1.05 : 1) ||
+    before.crossings - next.crossings < (lessInterleaving ? 1 : Math.max(1, before.crossings * 0.2))) return false;
+  if (a.interleavings > b.interleavings || (!lessInterleaving && a.offset > b.offset + 0.01) ||
     a.single > b.single + 0.01 || a.maxOffset > b.maxOffset + 0.01 ||
     a.lineageSpan > b.lineageSpan + 0.01 ||
     a.lineageDrift > b.lineageDrift + Math.min(size.width / 4, b.lineageDrift * 0.1) + 0.01) return false;
@@ -173,5 +179,5 @@ export function preferJointUnionLayout(
   ]);
   const allNext = complete(candidate), allBefore = complete(current);
   return allNext.crossings <= allBefore.crossings && allNext.contacts <= allBefore.contacts &&
-    allNext.length <= allBefore.length && allNext.bends <= allBefore.bends + 4;
+    allNext.length <= allBefore.length * (lessInterleaving ? 1.05 : 1) && allNext.bends <= allBefore.bends + 4;
 }

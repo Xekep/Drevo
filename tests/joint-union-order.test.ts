@@ -83,6 +83,64 @@ test("unsupported or over-budget models retain the complete original input", () 
   assert.deepEqual(wide, snapshot);
 });
 
+test("wide generations retain transitive local orders instead of skipping the joint search", () => {
+  const { graph, sketch } = fixture();
+  for (let i = 0; i < 60; i++) {
+    const id = `unrelated-${i}`;
+    graph.children!.push({ id, width: 100, y: 0 });
+    sketch.positions.push([id, { x: 1000 + i * 200, y: 0 }]);
+    sketch.occurrences!.push({ id, personId: id, block: id });
+  }
+  const saved = structuredClone({ graph, sketch });
+  const plan = jointUnionOrder(graph, sketch)!;
+  assert.ok(plan);
+  assert.equal(plan.crossings, 0);
+  assert.equal(plan.originalCrossings, 1);
+  assert.equal(plan.order.size, graph.children!.length);
+  assert.equal(new Set(plan.order.values()).size, plan.order.size);
+  for (let i = 5; i < 60; i++)
+    assert.ok(plan.order.get("a")! < plan.order.get(`unrelated-${i}`)!);
+  assert.deepEqual(jointUnionOrder(graph, sketch), plan);
+  assert.deepEqual({ graph, sketch }, saved);
+});
+
+test("a joint proposal may reduce interleaving with bounded total spread, preserving the worst family", () => {
+  const positions: TreeGeometry["positions"] = [
+    ["parent", { x: 300, y: 0 }], ["other-parent", { x: -900, y: 0 }],
+    ["a", { x: 0, y: 500 }], ["unrelated", { x: 200, y: 500 }],
+    ["b", { x: 400, y: 500 }], ["other-child", { x: 100, y: 1000 }],
+  ];
+  const before: TreeGeometry = {
+    mode: "generations", reverse: false, start: 1700, offset: 0, positions,
+    occurrences: positions.map(([id]) => ({ id, personId: id, block: id })),
+    generationBands: [0, 500, 1000].map((y, level) => ({ level, targetY: y, minY: y, maxY: y,
+      members: positions.filter(([, p]) => p.y === y).map(([id]) => id) })),
+    branches: ["a", "b", "other-child"].map(target => {
+      const source = target === "other-child" ? "other-parent" : "parent";
+      const from = new Map(positions).get(source)!, to = new Map(positions).get(target)!;
+      return { id: `child:${target}`, source, target, union: source, relations: [],
+        route: { sourceHandle: "bottom", targetHandle: "top", points: [
+          { x: from.x + 50, y: from.y + 84 }, { x: from.x + 50, y: to.y - 100 },
+          { x: to.x + 50, y: to.y - 100 }, { x: to.x + 50, y: to.y },
+        ] } };
+    }),
+  };
+  const after = structuredClone(before);
+  after.positions.find(([id]) => id === "b")![1].x = 200;
+  after.positions.find(([id]) => id === "unrelated")![1].x = 400;
+  after.branches![1].route.points.slice(2).forEach(p => { p.x = 250; });
+  const score = (g: TreeGeometry) => ({ crossings: g === before ? 10 : 9,
+    contacts: 10, length: g === before ? 1000 : 1040, bends: 4, cardHits: 0, overlaps: 0 });
+  const size = { width: 100, height: 84 };
+  assert.equal(preferJointUnionLayout(after, before, size, score), true);
+  assert.equal(preferJointUnionLayout(after, before, size, g => ({ ...score(g),
+    length: g === before ? 1000 : 1060 })), false, "line length increase is bounded");
+  const worse = structuredClone(after);
+  worse.positions.find(([id]) => id === "other-child")![1].x += 100;
+  assert.equal(preferJointUnionLayout(worse, before, size, score), false,
+    "the worst family must not become more spread out");
+});
+
 test("joint acceptance checks additional routes and never accepts a tiny primary improvement", () => {
   const before: TreeGeometry = {
     mode: "generations",

@@ -114,6 +114,53 @@ function score() {
     overlaps: scorer.cardOverlaps(g),
   });
 }
+
+for (const reverse of [false, true]) test(`balanced cold refinement repairs separated crossing generations (${reverse})`, () => {
+  const positions: TreeGeometry["positions"] = [];
+  for (let row = 0; row < 4; row++)
+    for (let i = 0; i < 40; i++) positions.push([`row-${row}-${i}`, { x: i * 400, y: row * 500 }]);
+  for (let i = 0; i < 150; i++) positions.push([`padding-${i}`, { x: i * 400, y: 2500 }]);
+  const points = new Map(positions);
+  let original: TreeGeometry = {
+    mode: "generations", reverse: false, start: 1700, offset: 0, nodeSize: size,
+    positions, occurrences: positions.map(([id]) => ({ id, personId: id, block: id })), routes: [],
+    generationBands: [0, 500, 1000, 1500, 2500].map((y, level) => ({
+      level, targetY: y, minY: y, maxY: y,
+      members: positions.filter(([, p]) => p.y === y).map(([id]) => id),
+    })),
+    branches: [0, 2].flatMap(row => [0, 1, 2].map(i => {
+      const source = `row-${row}-${i}`, target = `row-${row + 1}-${2 - i}`;
+      const a = points.get(source)!, b = points.get(target)!, lane = row * 500 + 340 + i * 12;
+      return { id: `child:${source}`, source, target, union: source,
+        relations: [{ type: "parent" as const, from: source, to: target }],
+        route: { sourceHandle: "bottom" as const, targetHandle: "top" as const, points: [
+          { x: a.x + 110, y: a.y + 264 }, { x: a.x + 110, y: lane },
+          { x: b.x + 110, y: lane }, { x: b.x + 110, y: b.y },
+        ] } };
+    })),
+  };
+  if (reverse) original = mirrored(original);
+  const saved = structuredClone(original), baseMeasure = score(), family = people(original);
+  let visitedLaterGeneration = false;
+  const measure = (geometry: TreeGeometry) => {
+    const p = new Map(geometry.positions);
+    const earlyUnchanged = original.positions.filter(([id]) => id.startsWith("row-0-") || id.startsWith("row-1-"))
+      .every(([id, point]) => p.get(id)!.x === point.x);
+    const laterOrderChanged = [2, 3].some(row => [0, 1].some(i =>
+      p.get(`row-${row}-${i}`)!.x > p.get(`row-${row}-${i + 1}`)!.x));
+    visitedLaterGeneration ||= earlyUnchanged && laterOrderChanged;
+    return baseMeasure(geometry);
+  };
+  assert.ok(measure(original).crossings > 0);
+  const result = optimizeFamilyRows(original, family, [], size, measure, undefined, true);
+  assert.ok(visitedLaterGeneration, "later-generation exchanges are evaluated before an earlier move commits");
+  assert.ok(measure(result).crossings < measure(original).crossings);
+  assert.equal(measure(result).cardHits, 0);
+  assert.equal(measure(result).overlaps, 0);
+  unchangedStructure(original, result);
+  assert.deepEqual(original, saved);
+  assert.deepEqual(optimizeFamilyRows(original, family, [], size, measure, undefined, true), result);
+});
 function unchangedStructure(before: TreeGeometry, after: TreeGeometry) {
   assert.deepEqual(after.occurrences, before.occurrences);
   assert.deepEqual(after.generationBands, before.generationBands);

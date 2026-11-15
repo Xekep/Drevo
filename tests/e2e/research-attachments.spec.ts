@@ -1,6 +1,34 @@
 import { expect, test } from "@playwright/test";
 import { aiChatDetailRoute, aiChatFixture } from "./ai-chat-fixture.ts";
 
+test("library includes assistant downloads and tree PDF actions", async ({ page }) => {
+  const chatId = "library-generated", second = "library-second";
+  const upload = { name: "input.csv", url: `/api/ai/attachments/${chatId}/input`, size: 512, type: "text/csv" };
+  const generated = { name: "result.xlsx", url: `/api/ai/files/${chatId}/result` };
+  await page.route("**/api/ai/status", route => route.fulfill({ json: { enabled: true } }));
+  await page.route("**/api/ai/chats", route => route.fulfill({ json: { chats: [
+    { id: chatId, title: "Короткий", updatedAt: "", busy: true },
+    { id: second, title: "Очень длинное название исследовательского диалога", updatedAt: "", busy: true },
+  ] } }));
+  await page.route(aiChatDetailRoute(chatId), route => route.fulfill({ json: aiChatFixture(
+    route.request().url(), chatId, [
+      { role: "user", content: "Изучи файл", attachments: [upload] },
+      { role: "assistant", content: "Готово", files: [generated, { name: "tree.pdf", url: "drevo:tree-pdf:all" }] },
+      { role: "assistant", content: "Повторная ссылка", files: [generated] },
+    ], true,
+  ) }));
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  await panel.getByRole("button", { name: "Вложения (3)", exact: true }).click();
+  const library = panel.getByRole("region", { name: "Библиотека вложений" });
+  await expect(library.getByRole("link", { name: "input.csv", exact: true })).toHaveAttribute("href", upload.url);
+  await expect(library.getByRole("link", { name: "result.xlsx", exact: true })).toHaveCount(1);
+  await expect(library.getByRole("link", { name: "result.xlsx", exact: true })).toHaveAttribute("href", generated.url);
+  await expect(library.getByRole("button", { name: "Скачать tree.pdf", exact: true })).toBeEnabled();
+  await expect(library.locator("li").filter({ hasText: "result.xlsx" })).not.toContainText("КБ");
+});
+
 test("paperclip and dropping files share a saved, clearable chat library", async ({
   page,
 }, testInfo) => {
