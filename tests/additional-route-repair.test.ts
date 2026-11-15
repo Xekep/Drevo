@@ -51,6 +51,58 @@ test("changing an extra tie's ports removes a crossing without moving its family
   assert.strictEqual(repairAdditionalRoutes(oversized, [link], size), oversized);
 });
 
+test("an unavoidable crossing does not prevent removing a needless detour", () => {
+  const link = { type: "guardian", from: "a", to: "b" } as const;
+  const geometry: TreeGeometry = {
+    mode: "generations", reverse: false, start: 1700, offset: 0, nodeSize: size,
+    positions: [["a", { x: 0, y: 100 }], ["b", { x: 1000, y: 100 }],
+      ["parent", { x: 490, y: -1264 }], ["child", { x: 490, y: 1000 }]],
+    branches: [{ id: "family", union: "family", source: "parent", target: "child",
+      relations: [{ type: "parent", from: "parent", to: "child" }],
+      route: { sourceHandle: "bottom", targetHandle: "top", points: [
+        { x: 600, y: -1000 }, { x: 600, y: 1000 },
+      ] } }],
+    routes: [[routeKey(link), { sourceHandle: "right", targetHandle: "top", points: [
+      { x: 220, y: 232 }, { x: 300, y: 232 }, { x: 300, y: -200 },
+      { x: 1110, y: -200 }, { x: 1110, y: 100 },
+    ] }]],
+  };
+  const snapshot = structuredClone(geometry), before = score(geometry);
+  const result = repairAdditionalRoutes(geometry, [link], size), after = score(result);
+  assert.equal(after.crossings, before.crossings);
+  assert.equal(after.contacts, before.contacts);
+  assert.ok(after.length < before.length);
+  assert.ok(after.bends < before.bends);
+  assert.strictEqual(result.positions, geometry.positions);
+  assert.strictEqual(result.branches, geometry.branches);
+  assert.equal(createGeometryContactScorer(size.width, size.height).cardContacts(result), 0);
+  assert.deepEqual(geometry, snapshot);
+});
+
+test("revisiting updated conflicts improves a synthetic four-tie family", async () => {
+  const people = randomFamily(1, 3), elk = new ELK({ algorithms: ["layered"] });
+  const family = await unionGeometry(people, graph => elk.layout(graph), false, [], size);
+  const links: Pick<FamilyLink, "type" | "from" | "to">[] = [
+    { type: "guardian", from: people[0].id, to: people.at(-1)!.id },
+    { type: "godparent", from: people[1].id, to: people.at(-2)!.id },
+    { type: "sworn_sibling", from: people[2].id, to: people.at(-3)!.id },
+    { type: "guardian", from: people[3].id, to: people.at(-4)!.id },
+  ];
+  const nodes = family.positions.map(([id]) => ({ id, birth: "", parents: [], spouses: [] }));
+  const original = { ...family, routes: routeRelationships(nodes, links, family.positions,
+    size.width, size.height, new Set(), family.branches!.map(b => ({ group: b.union, route: b.route }))) };
+  const before = score(original), result = repairAdditionalRoutes(original, links, size), after = score(result);
+  assert.ok(after.crossings <= 52, "the previous first-pass search stopped at 53 crossings");
+  assert.ok(after.contacts <= 58);
+  assert.ok(after.length <= before.length * 1.02);
+  assert.ok(after.bends <= before.bends + 4);
+  assert.strictEqual(result.positions, original.positions);
+  assert.strictEqual(result.branches, original.branches);
+  assert.deepEqual(result.routes!.map(([id]) => id), original.routes.map(([id]) => id));
+  const cards = createGeometryContactScorer(size.width, size.height);
+  assert.ok(cards.cardContacts(result) <= cards.cardContacts(original));
+});
+
 for (const reverse of [false, true]) test(`extra routing keeps every person, relation and family coordinate (${reverse})`, async () => {
   const people = randomFamily(3, 3), elk = new ELK({ algorithms: ["layered"] });
   const family = await unionGeometry(people, graph => elk.layout(graph), reverse, [], size);
@@ -82,5 +134,10 @@ for (const reverse of [false, true]) test(`extra routing keeps every person, rel
   }
   const cards = createGeometryContactScorer(size.width, size.height);
   assert.ok(cards.cardContacts(result) <= cards.cardContacts(original));
+  assert.deepEqual(repairAdditionalRoutes(original, [...links].reverse(), size), result);
+  for (const [, route] of result.routes!) for (let i = 1; i < route.points.length; i++) {
+    const a = route.points[i - 1], b = route.points[i];
+    assert.ok(a.x === b.x || a.y === b.y, "extra routes remain orthogonal");
+  }
   assert.deepEqual(original, snapshot);
 });

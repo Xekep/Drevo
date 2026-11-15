@@ -23,10 +23,7 @@ export function repairAdditionalRoutes(
     ...families, ...g.routes.map(([id, route]) => ({ group: `extra:${id}`, route })),
   ]);
   const initial = score(seed);
-  const candidates = links.filter(link => !["parent", "spouse"].includes(link.type) &&
-    initial.groups.has(`extra:${routeKey(link)}`)).sort((a, b) =>
-      initial.groups.get(`extra:${routeKey(b)}`)! - initial.groups.get(`extra:${routeKey(a)}`)! ||
-      routeKey(a).localeCompare(routeKey(b)));
+  const candidates = links.filter(link => !["parent", "spouse"].includes(link.type));
   if (!candidates.length) return original;
   const cards = new Spatial<Box>();
   const extent = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
@@ -52,19 +49,26 @@ export function repairAdditionalRoutes(
   const extraLength = initial.length - familyLength;
   const maxLength = initial.length + Math.min(initial.length * 0.02, extraLength * 0.2, size.width * 12);
   const people = original.positions.map(([id]) => ({ id, birth: "", parents: [], spouses: [] }));
-  const searchBudget = { remaining: ADDITIONAL_ROUTE_LIMITS.search };
+  // Keep a third of the same total A* allowance for the updated conflicts.
+  // Otherwise the first difficult port choice can exhaust both passes' work.
+  const refinementSearch = Math.floor(ADDITIONAL_ROUTE_LIMITS.search / 3);
+  const searchBudget = { remaining: ADDITIONAL_ROUTE_LIMITS.search - refinementSearch };
   let current = seed, best = seed, quality = initial, bestQuality = initial, attempts = 0;
   // A speculative pass may temporarily use extra turns; only a finished route
   // set within four extra turns can be returned. Length is bounded cumulatively.
   const handles = ["top", "bottom", "left", "right"] as const;
   for (let pass = 0; pass < 2; pass++) {
+    if (pass === 1) searchBudget.remaining += refinementSearch;
     const before = current;
-    for (const link of candidates) {
+    const ranked = candidates.filter(link => quality.groups.has(`extra:${routeKey(link)}`))
+      .sort((a, b) => quality.groups.get(`extra:${routeKey(b)}`)! - quality.groups.get(`extra:${routeKey(a)}`)! ||
+        routeKey(a).localeCompare(routeKey(b)));
+    for (const link of ranked) {
       const key = routeKey(link);
       for (const sourceHandle of handles) for (const targetHandle of handles) {
-        if (attempts++ >= limit) return best;
         const existing = current.routes.find(([id]) => id === key)?.[1];
         if (!existing || (existing.sourceHandle === sourceHandle && existing.targetHandle === targetHandle)) continue;
+        if (attempts++ >= limit) return best;
         const occupied = [...families, ...current.routes.filter(([id]) => id !== key)
           .map(([id, route]) => ({ group: `extra:${id}`, route }))];
         const proposed = routeRelationships(people, [link], current.positions, size.width, size.height,
@@ -73,21 +77,29 @@ export function repairAdditionalRoutes(
             p.y < extent.top || p.y > extent.bottom) || hits(proposed[1]) > hits(existing)) continue;
         const candidate = { ...current, routes: current.routes.map(route => route[0] === key ? proposed : route) };
         const next = score(candidate);
+        // Equal conflicts may still hide a needlessly long or winding path.
+        // Accept these steps only when neither length nor bends gets worse.
         if (next.crossings > quality.crossings || next.contacts > quality.contacts ||
             next.length > maxLength || next.bends > initial.bends + 8 ||
             !(next.crossings < quality.crossings ||
-              (next.contacts < quality.contacts && next.length <= quality.length))) continue;
+              (next.contacts < quality.contacts && next.length <= quality.length) ||
+              (next.crossings === quality.crossings && next.contacts === quality.contacts &&
+                next.length <= quality.length && next.bends <= quality.bends &&
+                (next.length < quality.length || next.bends < quality.bends)))) continue;
         current = candidate;
         quality = next;
         if (next.bends <= initial.bends + 4 &&
             (next.crossings < bestQuality.crossings ||
-              (next.crossings === bestQuality.crossings && next.contacts < bestQuality.contacts))) {
+              (next.crossings === bestQuality.crossings && next.contacts < bestQuality.contacts) ||
+              (next.crossings === bestQuality.crossings && next.contacts === bestQuality.contacts &&
+                next.length <= bestQuality.length && next.bends <= bestQuality.bends &&
+                (next.length < bestQuality.length || next.bends < bestQuality.bends)))) {
           best = candidate;
           bestQuality = next;
         }
       }
     }
-    if (current === before) break;
+    if (current === before && searchBudget.remaining > 0) break;
   }
   return best;
 }
