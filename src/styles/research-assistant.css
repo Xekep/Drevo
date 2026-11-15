@@ -277,6 +277,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   text-align: left;
 }
 .research-chat-picker-trigger span {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -344,6 +346,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   white-space: nowrap;
 }
 .research-chat-menu-list button span {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

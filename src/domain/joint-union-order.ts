@@ -32,14 +32,14 @@ export function jointUnionOrder(
     return;
   const ys = [...new Set(nodes.map((n) => n.y!))].sort((a, b) => a - b);
   const layers = ys.map((y) => nodes.flatMap((n, i) => (n.y === y ? [i] : [])));
-  // Preflight before allocating a wide row's cubic transitivity constraints.
-  if (
-    layers.reduce(
-      (s, row) => s + (row.length * (row.length - 1) * (row.length - 2)) / 3,
-      0,
-    ) >
-    MAX_CLAUSES / 2
-  )
+  // On wide generations vary only nearby household orders. All other pairs
+  // retain their order as constants; simplified transitivity still forbids
+  // cycles without a cubic allocation for unrelated families.
+  const localOrder = layers.reduce(
+    (s, row) => s + (row.length * (row.length - 1) * (row.length - 2)) / 3,
+    0,
+  ) > MAX_CLAUSES / 2;
+  if (layers.reduce((sum, row) => sum + row.length * (row.length - 1) / 2, 0) > MAX_VARIABLES / 2)
     return;
   const positions = new Map(sketch.positions),
     members = new Map<string, string[]>();
@@ -60,11 +60,20 @@ export function jointUnionOrder(
     orders = new Map<string, number>(),
     flips = new Map<number, number>();
   const variable = () => ++count;
-  const before = (i: number, j: number): number =>
-    i < j ? orders.get(`${i},${j}`)! : -orders.get(`${j},${i}`)!;
+  const before = (i: number, j: number): number => {
+    const variable = orders.get(i < j ? `${i},${j}` : `${j},${i}`);
+    return variable ? (i < j ? variable : -variable) :
+      left[i] < left[j] || (left[i] === left[j] && i < j) ? 1 : -1;
+  };
+  const add = (...literals: number[]) => {
+    if (literals.includes(1) || literals.some(l => literals.includes(-l))) return;
+    clauses.push([...new Set(literals.filter(l => l !== -1))]);
+  };
   for (const row of layers) {
+    const ranks = new Map([...row].sort((a, b) => left[a] - left[b]).map((id, i) => [id, i]));
     for (let a = 0; a < row.length; a++)
       for (let b = a + 1; b < row.length; b++) {
+        if (localOrder && Math.abs(ranks.get(row[a])! - ranks.get(row[b])!) > 4) continue;
         const v = variable();
         orders.set(`${row[a]},${row[b]}`, v);
         hints[v] = left[row[a]] < left[row[b]] ? 1 : -1;
@@ -75,7 +84,8 @@ export function jointUnionOrder(
           const x = before(row[a], row[b]),
             y = before(row[b], row[c]),
             z = before(row[a], row[c]);
-          clauses.push([-x, -y, z], [x, y, -z]);
+          add(-x, -y, z);
+          add(x, y, -z);
         }
   }
   type Port = { node: number; x: number };
@@ -112,6 +122,7 @@ export function jointUnionOrder(
     edges.push([a, b]);
   }
   const costs: number[] = [];
+  let fixedCrossings = 0;
   for (let l = 0; l < layers.length - 1; l++) {
     const es = edges.filter(
       ([a, b]) => nodes[a.node].y === ys[l] && nodes[b.node].y === ys[l + 1],
@@ -123,6 +134,10 @@ export function jointUnionOrder(
         const a = portBefore(es[i][0], es[j][0]),
           b = portBefore(es[i][1], es[j][1]);
         if (!a || !b || a === b) continue;
+        if (Math.abs(a) === 1 && Math.abs(b) === 1) {
+          if (a !== b) fixedCrossings++;
+          continue;
+        }
         const c = variable();
         costs.push(c);
         clauses.push([-a, b, c], [a, -b, c]);
@@ -152,10 +167,11 @@ export function jointUnionOrder(
     best: Int8Array | undefined;
   let crossings = originalCrossings;
   while (low <= high && budget.remaining > 0) {
-    // Seek a useful feasible proposal before spending budget proving a bound.
+    // Seek a feasible local improvement before spending budget on its optimum.
+    // Narrow models retain the stronger initial crossing target.
     const limit = best
       ? (low + high) >> 1
-      : Math.max(low, Math.min(high, Math.floor(originalCrossings * 0.6)));
+      : localOrder ? high : Math.max(low, Math.min(high, Math.floor(originalCrossings * 0.6)));
     count = baseCount;
     clauses.length = baseLength;
     // Truncated unary totalizer: sum(costs) <= limit. Balanced merges keep
@@ -202,7 +218,7 @@ export function jointUnionOrder(
         flips.has(i) && truth(flips.get(i)!, best!) ? [n.id] : [],
       ),
     ),
-    crossings,
-    originalCrossings,
+    crossings: crossings + fixedCrossings,
+    originalCrossings: originalCrossings + fixedCrossings,
   };
 }

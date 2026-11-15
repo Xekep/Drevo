@@ -2,6 +2,7 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { chatPollDelay, mergeChatDelta } from "../domain/ai-chat-polling.ts";
 import type { AiChatResponse } from "../shared/ai-chat-history.ts";
 import { AttachmentLibrary } from "./research/attachment-library";
+import { researchLibraryFiles } from "../domain/research-library-files.ts";
 import { CopyMessageButton } from "./research/copy-message-button.tsx";
 import { ResearchPanelSurface } from "./research/research-panel-surface";
 import {
@@ -416,9 +417,7 @@ export function ResearchAssistant({
     setError,
     attachmentCapabilities,
   );
-  const libraryFiles = messages
-    .flatMap((message) => message.attachments || [])
-    .filter((file) => file.url);
+  const libraryFiles = researchLibraryFiles(messages);
   const closeAssistant = useCallback(() => setOpen(false), []);
   const returnLauncherFocus = useCallback(() => launcher.current?.focus({ preventScroll: true }), []);
 
@@ -1603,6 +1602,10 @@ export function ResearchAssistant({
             {libraryOpen ? (
               <AttachmentLibrary
                 files={libraryFiles}
+                onExportTreePdf={onExportTreePdf ? scope => {
+                  void onExportTreePdf(scope).catch((reason: unknown) =>
+                    setError(reason instanceof Error ? reason.message : "Не удалось создать PDF древа."));
+                } : undefined}
                 onAsk={(name) => {
                   setDraft(`Изучи файл «${name}» из библиотеки вложений: `);
                   setLibraryOpen(false);

@@ -43,6 +43,17 @@ export function useFamilyView(
       focusToken: focus.token,
     });
     if (collapsed.size) setCollapsed(new Set());
+  } else if (focus && focus.token !== view.focusToken) {
+    // Search changes the projection's anchor, not only the open inspector.
+    // Persist it while consuming the navigation token so closing the profile
+    // cannot restore the old person, layout and camera context.
+    setView({
+      ...view,
+      anchor: focus.ids[0] || view.anchor,
+      expanded: new Set(),
+      revealed: focus.ids,
+      focusToken: focus.token,
+    });
   }
   const newFocus = !!focus && focus.token !== view.focusToken;
   const requested = newFocus ? focus.ids[0] : view.anchor;

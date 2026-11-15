@@ -1,13 +1,15 @@
 import { FileText, Paperclip } from "lucide-react";
-import type { ResearchAttachment } from "../../shared/research-attachments.ts";
+import type { ResearchLibraryFile } from "../../domain/research-library-files.ts";
 import { archiveResourceUrl } from "../../domain/archive-context.ts";
 
 export function AttachmentLibrary({
   files,
   onAsk,
+  onExportTreePdf,
 }: {
-  files: ResearchAttachment[];
+  files: ResearchLibraryFile[];
   onAsk: (name: string) => void;
+  onExportTreePdf?: (scope: "all" | "current") => void;
 }) {
   return (
     <section
@@ -25,8 +27,7 @@ export function AttachmentLibrary({
         <div className="research-library-empty">
           <Paperclip size={26} />
           <span>
-            Пока нет файлов. Добавьте их скрепкой или перетащите в окно, затем
-            отправьте сообщение.
+            Пока нет файлов. Здесь появятся ваши вложения и файлы из ответов ИИ.
           </span>
         </div>
       ) : (
@@ -35,10 +36,15 @@ export function AttachmentLibrary({
             <li key={file.url}>
               <FileText size={20} />
               <div>
-                <a href={archiveResourceUrl(file.url)} download={file.name}>
+                {file.url === "drevo:tree-pdf:current" || file.url === "drevo:tree-pdf:all" ? (
+                  <button type="button" disabled={!onExportTreePdf}
+                    onClick={() => onExportTreePdf?.(file.url.endsWith(":all") ? "all" : "current")}>
+                    Скачать {file.name}
+                  </button>
+                ) : <a href={archiveResourceUrl(file.url)} download={file.name}>
                   {file.name}
-                </a>
-                <small>{Math.max(1, Math.round(file.size / 1024))} КБ</small>
+                </a>}
+                {file.size !== undefined && <small>{Math.max(1, Math.round(file.size / 1024))} КБ</small>}
                 <button type="button" onClick={() => onAsk(file.name)}>
                   Спросить об этом файле
                 </button>

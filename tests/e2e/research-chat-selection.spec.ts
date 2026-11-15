@@ -128,12 +128,18 @@ test("two chats answer in parallel and show their own progress indicators", asyn
   ).toHaveCount(0);
   await picker.click();
   await panel.getByRole("button", { name: "Новый диалог" }).click();
-  await panel.locator("textarea").fill("Второй");
+  await panel.locator("textarea").fill("Второй диалог с очень длинным названием исследования");
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(picker).toContainText("Второй");
   await picker.click();
   const list = panel.locator(".research-chat-menu-list");
   await expect(list.locator(".research-chat-working")).toHaveCount(2);
+  const edges = await list.locator(".research-chat-working").evaluateAll(elements => elements.map(svg => {
+    const box = svg.getBoundingClientRect();
+    return { center: box.x + box.width / 2, right: svg.closest("button")!.getBoundingClientRect().right };
+  }));
+  expect(Math.abs(edges[0].center - edges[1].center)).toBeLessThan(1);
+  for (const edge of edges) expect(edge.right - edge.center).toBeLessThan(22);
   await page.keyboard.press("Escape");
   await page.evaluate(() =>
     (window as typeof window & { finishAiChat(id: string): void }).finishAiChat(

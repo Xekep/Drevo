@@ -75,6 +75,7 @@ function shifts(geometry: TreeGeometry, size: TreeNodeSize): Move[] {
 export function refineColdPlacement(
   original: TreeGeometry, people: LayoutPerson[],
   links: Pick<FamilyLink, "type" | "from" | "to">[], size: TreeNodeSize, score: Score,
+  balanceGenerations = false,
 ) {
   let best = original;
   const initial = score(original);
@@ -90,7 +91,7 @@ export function refineColdPlacement(
     }
     if (!changed) break;
   }
-  return optimizeMultiPartnerOrder(optimizeFamilyRows(best, people, links, size, score), people, links, size, score);
+  return optimizeMultiPartnerOrder(optimizeFamilyRows(best, people, links, size, score, undefined, balanceGenerations), people, links, size, score);
 }
 
 /** A bounded cold-layout pass: order within generations first, then close unused gaps. */
@@ -101,6 +102,7 @@ export function optimizeFamilyRows(
   size: TreeNodeSize,
   score: Score,
   previous?: TreeGeometry,
+  balanceGenerations = false,
 ): TreeGeometry {
   if (original.positions.length > 1600) return original;
   const primary = original.routes?.length
@@ -133,34 +135,52 @@ export function optimizeFamilyRows(
     const retained = small ? 12 : 8;
     let probes = 0;
     const seen = new Set<string>();
-    for (const [rowIndex, row] of placedFamilyRows(best, size).entries()) {
-      if (row.length < 2 || row.length > 64) continue;
-      // Moving this row can only change its incident branches. A crossing
-      // between two untouched branches cannot disappear after rerouting.
-      if (!row.some((block) => crossed.has(block.id))) continue;
-      const active = row
+    const rows = placedFamilyRows(best, size).map((row, rowIndex) => ({ row, rowIndex }))
+      .filter(({ row }) => row.length >= 2 && row.length <= 64 && row.some(block => crossed.has(block.id)))
+      .map(({ row, rowIndex }) => ({ row, rowIndex, active: row
         .map((block, index) => ({ block, index }))
         .filter(({ block }) => contacts.has(block.id))
-        .sort((a, b) => contacts.get(b.block.id)! - contacts.get(a.block.id)!);
+        .sort((a, b) => contacts.get(b.block.id)! - contacts.get(a.block.id)!) }));
+    const queues = rows.map(function* ({ rowIndex, row, active }) {
       for (const { index: from } of active)
-        for (let step = 1; step < row.length; step++) {
+        for (let step = 1; step < row.length; step++)
           for (const to of [from - step, from + step]) {
             if (to < 0 || to >= row.length) continue;
-            if (probes >= (small ? 512 : 128)) break;
-            const order = row.map((_, i) => i);
-            order.splice(to, 0, ...order.splice(from, 1));
-            const key = `${rowIndex}:${order.join(",")}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            const move = reordered(best, row, from, to);
-            if (move) {
-              probes++;
-              candidates.push({ move, quality: score(move.geometry) });
-              candidates.sort(compare);
-              if (candidates.length > retained) candidates.pop();
+            yield { rowIndex, row, from, to };
+          }
+    });
+    const ordered = function* () {
+      if (!balanceGenerations) {
+        for (const queue of queues) yield* queue;
+      } else {
+        // One insertion per generation per round; preserve the global budget.
+        let pending = true;
+        while (pending) {
+          pending = false;
+          for (const queue of queues) {
+            const next = queue.next();
+            if (!next.done) {
+              pending = true;
+              yield next.value;
             }
           }
         }
+      }
+    };
+    for (const { rowIndex, row, from, to } of ordered()) {
+      if (probes >= (small ? 512 : 128)) break;
+      const order = row.map((_, i) => i);
+      order.splice(to, 0, ...order.splice(from, 1));
+      const key = `${rowIndex}:${order.join(",")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const move = reordered(best, row, from, to);
+      if (move) {
+        probes++;
+        candidates.push({ move, quality: score(move.geometry) });
+        candidates.sort(compare);
+        if (candidates.length > retained) candidates.pop();
+      }
     }
     // Keep the same probes and stable ranking, but release discarded geometry
     // immediately instead of retaining hundreds of complete candidate scenes.

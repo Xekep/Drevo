@@ -1309,7 +1309,14 @@ export async function unionGeometry(
             "elk.layered.thoroughness": "1",
           },
         }), reverse, links, 1, size, false, undefined, plan.flippedPairs);
-        const candidate = finish(refineColdPlacement(placed, people, links, size, finalScore));
+        const settled = finish(refineColdPlacement(placed, people, links, size, finalScore));
+        // Joint ordering and centering can expose useful row exchanges that
+        // the earlier wide generations exhausted the old probe budget before.
+        // Judge this bounded follow-up against the completed joint scene.
+        const tightened = finishColdFamilyLayout(
+          refineColdPlacement(settled, people, links, size, finalScore, true), people, links, size, finalScore,
+        );
+        const candidate = preferColdFamilyLayout(tightened, settled, size, finalScore) ? tightened : settled;
         const nextExtent = extent(candidate), oldExtent = extent(complete);
         if (Math.max(nextExtent.width, nextExtent.height) <=
           Math.max(oldExtent.width, oldExtent.height) * 1.4 &&
