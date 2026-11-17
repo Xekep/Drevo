@@ -276,6 +276,34 @@ sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" -c \
 
 ## Проверка и обслуживание
 
+GitHub Actions проверяет публичный health по расписанию, но фактические запуски
+могут быть разделены часами. Для проверки раз в минуту установите systemd-таймер
+на независимом Linux-хосте с Python 3 и доступом к `mydrevo.org`.
+
+```sh
+sudo install -D -m 0644 ops/check-availability.py /usr/local/libexec/drevo-check-availability.py
+sudo install -m 0644 ops/drevo-availability.service ops/drevo-availability.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start drevo-availability.service
+sudo systemctl enable --now drevo-availability.timer
+systemctl list-timers drevo-availability.timer
+journalctl -u drevo-availability.service -n 20
+```
+
+Проверка требует HTTP 200 и `ok: true`. Для уведомлений подключите журнал
+службы к внешнему мониторингу, который отслеживает также отсутствие проверок.
+При установке на сервер «Древа» таймер даёт локальную диагностику. Проверка
+потери самого сервера требует независимого хоста.
+
+CI и выкладка выполняют `npm run audit` для сборки и отдельный `npm audit`
+для серверного lockfile. Пока исправление
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+не выпущено, `postinstall` применяет к dev-версии `picomatch 4.0.7` патч
+из [upstream PR #237](https://github.com/micromatch/picomatch/pull/237).
+Аудит допускает это предупреждение только при совпадении контрольной суммы
+исправленного парсера и только для dev-цепочки. После выпуска исправленной
+версии обновите lockfile, удалите патч и верните обычный `npm audit`.
+
 ```sh
 systemctl status drevo --no-pager
 journalctl -u drevo -n 100 --no-pager

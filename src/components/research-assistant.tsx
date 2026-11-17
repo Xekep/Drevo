@@ -2,7 +2,8 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { chatPollDelay, mergeChatDelta } from "../domain/ai-chat-polling.ts";
 import type { AiChatResponse } from "../shared/ai-chat-history.ts";
 import { AttachmentLibrary } from "./research/attachment-library";
-import { researchLibraryFiles } from "../domain/research-library-files.ts";
+import { ResearchDownload } from "./research/research-download";
+import { researchDownload, researchLibraryFiles } from "../domain/research-library-files.ts";
 import { CopyMessageButton } from "./research/copy-message-button.tsx";
 import { ResearchPanelSurface } from "./research/research-panel-surface";
 import {
@@ -16,7 +17,7 @@ import {
   encodeResearchFiles,
 } from "./research/use-research-attachments";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
-import type { ResearchResult, ResearchTreeViewContext, UiAction } from "../shared/research-protocol.ts";
+import type { GeneratedResearchFileMeta, ResearchResult, ResearchTreeViewContext, UiAction } from "../shared/research-protocol.ts";
 import type { TreeOptimizationGoal } from "../domain/optimize-tree-layout.ts";
 import { browserTimeZone } from "../data/browser-time-zone";
 import {
@@ -29,6 +30,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -417,7 +419,11 @@ export function ResearchAssistant({
     setError,
     attachmentCapabilities,
   );
-  const libraryFiles = researchLibraryFiles(messages);
+  const libraryFiles = useMemo(() => researchLibraryFiles(messages), [messages]);
+  const exportResearchPdf = onExportTreePdf ? (scope: "all" | "current") => {
+    void onExportTreePdf(scope).catch((reason: unknown) =>
+      setError(reason instanceof Error ? reason.message : "Не удалось создать PDF древа."));
+  } : undefined;
   const closeAssistant = useCallback(() => setOpen(false), []);
   const returnLauncherFocus = useCallback(() => launcher.current?.focus({ preventScroll: true }), []);
 
@@ -1138,6 +1144,7 @@ export function ResearchAssistant({
           error?: string;
           chatId?: string;
           attachments?: ResearchAttachment[];
+          generatedFileMeta?: GeneratedResearchFileMeta[];
         };
         if (parsed.event === "chat" && data.chatId) {
           accepted = true;
@@ -1238,6 +1245,7 @@ export function ResearchAssistant({
                 ? data.suggestionIds
                 : [],
               files: Array.isArray(data.files) ? data.files : [],
+              generatedFileMeta: data.generatedFileMeta,
               activities: steps,
             },
           ] as Message[];
@@ -1602,10 +1610,7 @@ export function ResearchAssistant({
             {libraryOpen ? (
               <AttachmentLibrary
                 files={libraryFiles}
-                onExportTreePdf={onExportTreePdf ? scope => {
-                  void onExportTreePdf(scope).catch((reason: unknown) =>
-                    setError(reason instanceof Error ? reason.message : "Не удалось создать PDF древа."));
-                } : undefined}
+                onExportTreePdf={exportResearchPdf}
                 onAsk={(name) => {
                   setDraft(`Изучи файл «${name}» из библиотеки вложений: `);
                   setLibraryOpen(false);
@@ -1700,40 +1705,14 @@ export function ResearchAssistant({
                         ),
                       )}
                       {message.role === "assistant" &&
-                        message.files?.map((file) =>
-                          file.url === "drevo:tree-pdf:current" ||
-                          file.url === "drevo:tree-pdf:all" ? (
-                            <button
-                              className="research-file"
-                              type="button"
-                              key={file.url}
-                              disabled={!onExportTreePdf}
-                              onClick={() => {
-                                if (!onExportTreePdf) return;
-                                void onExportTreePdf(
-                                  file.url.endsWith(":all") ? "all" : "current",
-                                ).catch((reason: unknown) =>
-                                  setError(
-                                    reason instanceof Error
-                                      ? reason.message
-                                      : "Не удалось создать PDF древа.",
-                                  ),
-                                );
-                              }}
-                            >
-                              Скачать {file.name}
-                            </button>
-                          ) : (
-                            <a
-                              className="research-file"
-                              key={file.url}
-                              href={archiveResourceUrl(file.url)}
-                              download={file.name}
-                            >
-                              Скачать {file.name}
-                            </a>
-                          ),
-                        )}
+                        message.files?.map((file) => (
+                          <ResearchDownload
+                            className="research-file"
+                            key={file.url}
+                            file={researchDownload(file, message.generatedFileMeta)}
+                            onExportTreePdf={exportResearchPdf}
+                          />
+                        ))}
                       {message.role === "assistant" &&
                         message.suggestionIds?.map((id) => {
                           const status = message.suggestionStatuses?.[id];

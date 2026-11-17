@@ -1,6 +1,7 @@
 import { externalLinkAttributes } from "../../shared/external-links.ts";
 import { Component, memo, useMemo, type ReactNode } from "react";
 import type { ResearchAttachment } from "../../shared/research-attachments.ts";
+import type { GeneratedResearchFileMeta, ResearchFile } from "../../shared/research-protocol.ts";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -25,7 +26,8 @@ export type ResearchMessage = {
   content: string;
   references?: ResearchAnswerReference[];
   suggestionIds?: string[];
-  files?: Array<{ name: string; url: string }>;
+  files?: ResearchFile[];
+  generatedFileMeta?: GeneratedResearchFileMeta[];
   activities?: string[];
   attachments?: ResearchAttachment[];
 };

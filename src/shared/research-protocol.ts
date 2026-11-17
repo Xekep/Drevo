@@ -34,6 +34,11 @@ export type UiAction =
   | { type: "zoom_in" | "zoom_out" };
 
 export type ResearchFile = { name: string; url: string };
+export type GeneratedResearchFileMeta = ResearchFile & {
+  contentType: string;
+  size: number;
+  expires: number;
+};
 
 export type ResearchResult = {
   answer: string;

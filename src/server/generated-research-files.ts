@@ -8,20 +8,14 @@ import type { GeneratedResearchFile } from "./code-interpreter.ts";
 import { reservePlatformDisk } from "./platform-disk-reservation.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { ForbiddenError } from "./users.ts";
+import type { GeneratedResearchFileMeta } from "../shared/research-protocol.ts";
+export type { GeneratedResearchFileMeta } from "../shared/research-protocol.ts";
 
 const MAX_GENERATED_FILES_BYTES = 64 * 1024 * 1024;
 const FILE_RETENTION_MS = 60 * 60_000;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 export class GeneratedFileAccessError extends ForbiddenError {}
-
-export type GeneratedResearchFileMeta = {
-  name: string;
-  url: string;
-  contentType: string;
-  size: number;
-  expires: number;
-};
 
 export function pruneGeneratedResearchFiles<T extends { expires: number }>(
   files: Map<string, T>,

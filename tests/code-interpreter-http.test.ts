@@ -168,6 +168,9 @@ for (const mode of ["legacy-common-off", "inherited-disabled", "role-disabled", 
       if (enabled) {
         const file = result.files[0];
         assert.equal(file.name, "table.csv");
+        const meta = result.generatedFileMeta[0];
+        assert.equal(meta.url, file.url);
+        assert.ok(meta.expires > Date.now() && meta.expires <= Date.now() + 30 * 60_000);
         const download = await request(base + file.url);
         assert.equal(download.status, 200);
         assert.match(download.headers.get("content-type")!, /text\/csv/);
@@ -204,6 +207,7 @@ for (const mode of ["legacy-common-off", "inherited-disabled", "role-disabled", 
           base + `/api/ai/chats/${result.chatId}`,
         ).then((value) => value.json());
         assert.equal(chat.messages.at(-1).files[0].url, file.url);
+        assert.deepEqual(chat.messages.at(-1).generatedFileMeta, result.generatedFileMeta);
         await request(base + `/api/ai/chats/${result.chatId}`, {
           method: "DELETE",
         });

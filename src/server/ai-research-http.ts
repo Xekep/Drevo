@@ -1841,6 +1841,7 @@ export function aiResearchHttp({
         }
         if (controller.signal.aborted)
           throw new DOMException("Запрос остановлен", "AbortError");
+        const generatedFileMeta = generatedFiles.metadata(result.files);
         const answerSaved = await archive.db.transaction(async () => {
           await assertTurnRunning(true);
           if (
@@ -1857,7 +1858,7 @@ export function aiResearchHttp({
             references: result.references,
             suggestionIds: result.suggestionIds,
             files: result.files,
-            generatedFileMeta: generatedFiles.metadata(result.files),
+            generatedFileMeta,
           });
           const referencedIds = result.references
             .filter((item) => item.kind === "person")
@@ -1959,9 +1960,10 @@ export function aiResearchHttp({
                 suggestionIds: result.suggestionIds,
                 uiActions: result.uiActions,
                 files: result.files,
+                generatedFileMeta,
               });
               res.end();
-            } else json(res, 200, { ...result, chatId: chat.id });
+            } else json(res, 200, { ...result, chatId: chat.id, generatedFileMeta });
             await delivered;
           } catch (error) {
             res.destroy();

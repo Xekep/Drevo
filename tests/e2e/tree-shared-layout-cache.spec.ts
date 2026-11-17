@@ -4,9 +4,9 @@ import { archiveChanges } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 import { familyViewAction } from "./tree-toolbar-actions.ts";
 
-async function countCalculations(page: Page) {
-  await page.addInitScript(() => {
-    const state = { requests: 0 };
+async function countCalculations(page: Page, holdWorker = false) {
+  await page.addInitScript((hold) => {
+    const state = { requests: 0, terminated: 0 };
     Object.assign(window, { __layoutCalculations: state });
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
@@ -16,11 +16,18 @@ async function countCalculations(page: Page) {
         this.layout = String(url).includes("layout.worker");
       }
       postMessage(message: unknown) {
-        if (this.layout) state.requests++;
+        if (this.layout) {
+          state.requests++;
+          if (hold) return;
+        }
         super.postMessage(message);
       }
+      terminate() {
+        if (this.layout) state.terminated++;
+        super.terminate();
+      }
     };
-  });
+  }, holdWorker);
 }
 const calculations = (page: Page) =>
   page.evaluate(
@@ -213,22 +220,22 @@ test("a fresh browser reuses server layout and falls back to its Worker when cac
       )
       .toBe(true);
     const baseURL = new URL(page.url()).origin;
-    for (const offline of [false, true]) {
+    for (const cache of ["ready", "late", "offline"] as const) {
       const context = await browser.newContext({
         baseURL,
         viewport: page.viewportSize()!,
       });
       contexts.push(context);
       const fresh = await context.newPage();
-      await countCalculations(fresh);
+      await countCalculations(fresh, cache === "late");
       await fresh.route("**/api/tree-layout", async route => {
-        if (offline) return route.abort();
-        // Slow mobile login must not abandon an existing server cache after 1s.
+        if (cache === "offline") return route.abort();
+        if (cache === "ready") return route.continue();
         const cached = await route.fetch();
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await expect.poll(() => calculations(fresh), { timeout: 2_500 }).toBe(1);
         await route.fulfill({ response: cached });
       });
-      const response = offline
+      const response = cache === "offline"
         ? undefined
         : fresh.waitForResponse(
             (r) => new URL(r.url()).pathname === "/api/tree-layout",
@@ -243,9 +250,14 @@ test("a fresh browser reuses server layout and falls back to its Worker when cac
         expect(
           (await (await response).json()).geometry.positions.length,
         ).toBeGreaterThanOrEqual(40);
-      if (offline) expect(await calculations(fresh)).toBeGreaterThan(0);
-      else expect(await calculations(fresh)).toBe(0);
-      await info.attach(offline ? "local-fallback" : "shared-hit", {
+      if (cache === "ready") expect(await calculations(fresh)).toBe(0);
+      else expect(await calculations(fresh)).toBeGreaterThan(0);
+      if (cache === "late") {
+        expect(await fresh.evaluate(() => (window as typeof window & {
+          __layoutCalculations: { terminated: number };
+        }).__layoutCalculations.terminated)).toBe(1);
+      }
+      await info.attach(cache, {
         body: JSON.stringify({
           elapsedMs: Date.now() - start,
           workerCalculations: await calculations(fresh),
@@ -268,5 +280,25 @@ test("a fresh browser reuses server layout and falls back to its Worker when cac
       },
     });
     expect(restored.status()).toBe(200);
+  }
+});
+
+test("a stalled shared cache does not hold up the local layout worker", async ({ page }) => {
+  await countCalculations(page);
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/tree-layout", async route => {
+    await delayed;
+    await route.abort().catch(() => {});
+  });
+  try {
+    const sent = page.waitForRequest(request => new URL(request.url()).pathname === "/api/tree-layout");
+    await page.goto("/tree");
+    await sent;
+    // The request is still pending. The previous implementation waited five seconds.
+    await expect.poll(() => calculations(page), { timeout: 2_500 }).toBe(1);
+    await expect(page.locator(".tree-canvas")).toHaveAttribute("data-layout-ready", "true", { timeout: 30_000 });
+  } finally {
+    release();
   }
 });

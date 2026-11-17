@@ -9,6 +9,8 @@ import { createLayoutMemoryCache, layoutCacheKey } from "./layout-cache";
 import { readLayout, readLayoutHistory, writeLayout } from "./layout-storage";
 import { readSharedLayout } from "./shared-layout-cache";
 
+const SHARED_LAYOUT_HEAD_START_MS = 650;
+
 export function useTreeLayout(
   family: Family,
   visible: ReadonlySet<string>,
@@ -112,6 +114,10 @@ export function useTreeLayout(
         : undefined);
     let cancelled = false;
     let calculating = false;
+    let settled = false;
+    let waitingForShared = false;
+    let localFailure: TaggedLayoutWorkerResponse | undefined;
+    let localTimer: ReturnType<typeof setTimeout> | undefined;
     const sharedRequest = new AbortController();
     let detach = () => {};
     const timer = setTimeout(() => {
@@ -122,12 +128,20 @@ export function useTreeLayout(
     }, 80);
     const finish = (data: TaggedLayoutWorkerResponse) => {
       if (
-        cancelled ||
+        cancelled || settled ||
         data.requestId !== requestId ||
         requestRef.current !== requestId
       )
         return;
+      if ("error" in data && waitingForShared) {
+        pendingRef.current = false;
+        localFailure = data;
+        return;
+      }
+      settled = true;
       clearTimeout(timer);
+      clearTimeout(localTimer);
+      sharedRequest.abort();
       pendingRef.current = false;
       setBusy(false);
       if (!("error" in data))
@@ -167,7 +181,7 @@ export function useTreeLayout(
         pendingRef.current = true;
         const onMessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) => {
           const data = event.data;
-          if (cancelled || data.requestId !== requestId) return;
+          if (cancelled || settled || data.requestId !== requestId) return;
           if (!("error" in data)) {
             cache.set(key, data.geometry);
             if (cacheScope) void writeLayout(cacheScope, key, data.geometry, projection);
@@ -219,13 +233,30 @@ export function useTreeLayout(
             // A small edit of this projection keeps its local history. A new
             // view must still consult/warm the server, even with an old scene.
             if (history) return calculate(history);
+            waitingForShared = true;
+            let localStarted = false;
+            const startLocal = () => {
+              if (localStarted || cancelled || settled) return;
+              localStarted = true;
+              calculate();
+            };
+            // Give a fast cache hit time to arrive, then use whichever result
+            // is ready first. Never replace a layout that is already displayed.
+            localTimer = setTimeout(startLocal, SHARED_LAYOUT_HEAD_START_MS);
             const shared = await readSharedLayout(input, key, sharedRequest.signal);
-            if (cancelled) return;
+            if (cancelled || settled) return;
+            waitingForShared = false;
             if (shared) {
+              if (pendingRef.current && workerRef.current) {
+                detach();
+                workerRef.current.terminate();
+                workerRef.current = null;
+              }
               cache.set(key, shared);
               void writeLayout(cacheScope, key, shared, projection);
               finish({ requestId, geometry: shared });
-            } else calculate();
+            } else if (localFailure) finish(localFailure);
+            else startLocal();
           });
         } else calculate();
       });
@@ -233,6 +264,7 @@ export function useTreeLayout(
 
     return () => {
       clearTimeout(timer);
+      clearTimeout(localTimer);
       cancelled = true;
       sharedRequest.abort();
       detach();
