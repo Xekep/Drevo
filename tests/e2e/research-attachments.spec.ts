@@ -5,6 +5,8 @@ test("library includes assistant downloads and tree PDF actions", async ({ page 
   const chatId = "library-generated", second = "library-second";
   const upload = { name: "input.csv", url: `/api/ai/attachments/${chatId}/input`, size: 512, type: "text/csv" };
   const generated = { name: "result.xlsx", url: `/api/ai/files/${chatId}/result` };
+  const now = Date.now();
+  await page.clock.install({ time: now });
   await page.route("**/api/ai/status", route => route.fulfill({ json: { enabled: true } }));
   await page.route("**/api/ai/chats", route => route.fulfill({ json: { chats: [
     { id: chatId, title: "Короткий", updatedAt: "", busy: true },
@@ -13,7 +15,8 @@ test("library includes assistant downloads and tree PDF actions", async ({ page 
   await page.route(aiChatDetailRoute(chatId), route => route.fulfill({ json: aiChatFixture(
     route.request().url(), chatId, [
       { role: "user", content: "Изучи файл", attachments: [upload] },
-      { role: "assistant", content: "Готово", files: [generated, { name: "tree.pdf", url: "drevo:tree-pdf:all" }] },
+      { role: "assistant", content: "Готово", files: [generated, { name: "tree.pdf", url: "drevo:tree-pdf:all" }],
+        generatedFileMeta: [{ ...generated, expires: now + 60_000, size: 1024, contentType: "application/octet-stream" }] },
       { role: "assistant", content: "Повторная ссылка", files: [generated] },
     ], true,
   ) }));
@@ -26,7 +29,12 @@ test("library includes assistant downloads and tree PDF actions", async ({ page 
   await expect(library.getByRole("link", { name: "result.xlsx", exact: true })).toHaveCount(1);
   await expect(library.getByRole("link", { name: "result.xlsx", exact: true })).toHaveAttribute("href", generated.url);
   await expect(library.getByRole("button", { name: "Скачать tree.pdf", exact: true })).toBeEnabled();
-  await expect(library.locator("li").filter({ hasText: "result.xlsx" })).not.toContainText("КБ");
+  await expect(library.locator("li").filter({ hasText: "result.xlsx" })).toContainText("Ссылка до");
+  await expect(library.getByRole("button", { name: "Спросить об этом файле" })).toHaveCount(1);
+  await expect(library.locator("li").filter({ hasText: "input.csv" }).getByRole("button", { name: "Спросить об этом файле" })).toBeVisible();
+  await page.clock.fastForward(61_000);
+  await expect(library.getByRole("link", { name: "result.xlsx", exact: true })).toHaveCount(0);
+  await expect(library.getByText("result.xlsx · Срок ссылки истёк")).toBeVisible();
 });
 
 test("paperclip and dropping files share a saved, clearable chat library", async ({

@@ -1,0 +1,14 @@
+[Unit]
+Description=Check Drevo public availability
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+TimeoutStartSec=15s
+ExecStart=/usr/bin/python3 /usr/local/libexec/drevo-check-availability.py

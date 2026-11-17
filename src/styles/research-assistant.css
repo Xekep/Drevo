@@ -672,6 +672,9 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   background: #fff;
   cursor: pointer;
 }
+span.research-file {
+  cursor: default;
+}
 .research-inline-reference {
   display: inline;
   padding: 0;
@@ -860,7 +863,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   display: grid;
   gap: 4px;
 }
-.research-attachment-library a {
+.research-attachment-library a,
+.research-attachment-library li > div > span {
   overflow-wrap: anywhere;
   font-size: 13px;
 }
