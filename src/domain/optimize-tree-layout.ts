@@ -7,6 +7,7 @@ import { familyRowNoWorse } from "./family-row-moves.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
 import { compactTreeLayout } from "./compact-tree-layout.ts";
 import { alignFamilyLineages } from "./lineage-alignment.ts";
+import { spaceFamilyRoutes } from "./family-route-spacing.ts";
 
 export type TreeOptimizationGoal = "routing" | "compact";
 
@@ -63,6 +64,7 @@ export function optimizeDisplayedTree(
     const full = createGeometryContactScorer(size.width, size.height);
     if (full.cardContacts(candidate) <= full.cardContacts(best)) best = candidate;
   }
+  best = spaceFamilyRoutes(best, size);
   const after = score(best);
   return { geometry: best, optimization: {
     changed: best !== original,

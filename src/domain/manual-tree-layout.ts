@@ -5,6 +5,7 @@ import { placedFamilyRows } from "./local-family-order.ts";
 import { routeFamilyMove, translateFamilyBlocks } from "./family-row-moves.ts";
 import { routeRelationships, simplifyRoute } from "./edge-routing.ts";
 import { bundleFamilyBranches } from "./family-branch-bundling.ts";
+import { spaceFamilyRoutes } from "./family-route-spacing.ts";
 
 /** One displayed household moves horizontally; no people or generation data change. */
 export function moveDisplayedFamily(
@@ -108,5 +109,5 @@ export function moveDisplayedFamily(
       ]),
     };
   }
-  return geometry;
+  return spaceFamilyRoutes(geometry, size);
 }

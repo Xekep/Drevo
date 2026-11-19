@@ -3,6 +3,7 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import { unionGeometry } from "../domain/union-layout.ts";
 import { treeNodeSize } from "../domain/tree-layout-constants.ts";
 import type { LayoutCacheInput } from "../domain/layout-cache-key.ts";
+import { spaceFamilyRoutes } from "../domain/family-route-spacing.ts";
 
 const input = workerData as LayoutCacheInput;
 const elk = new ELK();
@@ -14,7 +15,7 @@ try {
     input.links,
     treeNodeSize(),
   );
-  parentPort!.postMessage(geometry);
+  parentPort!.postMessage(spaceFamilyRoutes(geometry));
 } finally {
   elk.terminateWorker();
 }
