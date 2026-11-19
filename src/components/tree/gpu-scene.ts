@@ -16,7 +16,22 @@ import { createGpuMotion, type GpuMotionPoint } from "./gpu-motion.ts";
 import { treeMotionOrigins } from "./tree-motion-origins.ts";
 
 const MAX_BUFFERS = 24 * 1024 * 1024;
+const LABEL_FAR_ZOOM = 0.18;
+const LABEL_DETAIL_ZOOM = 0.4;
+const LABEL_FULL_ZOOM = 0.52;
+const NAME_SIZE = 22;
+const MAX_NAME_SCALE = 28 / NAME_SIZE;
+const DETAIL_GLYPH = 130;
 type Batch = { buffer: WebGLBuffer; count: number };
+type LabelStyle = {
+  top: number;
+  size: number;
+  lineHeight: number;
+  maxLines: number;
+  name?: boolean;
+  detailShift?: number;
+  alignRight?: boolean;
+};
 type IndexedNode = {
   left: number;
   right: number;
@@ -93,14 +108,23 @@ export function createGpuScene(
       layout(location=2) in vec2 range; layout(location=3) in vec4 color;
       layout(location=4) in float kind; layout(location=5) in float motionIndex;
       ${cameraShader}
-      uniform float sceneOpacity, motionProgress; uniform bool motionDeparture; uniform sampler2D motionAtlas;
+      uniform float sceneOpacity, motionProgress, labelDetail; uniform bool motionDeparture; uniform sampler2D motionAtlas;
       out vec2 texCoord; out vec2 local; out vec4 tint; flat out int mode; flat out vec2 dimensions; flat out vec4 atlasRect;
       void main() { vec2 c=corners[gl_VertexID]; int index=int(motionIndex);
         vec4 movement=texelFetch(motionAtlas,ivec2(index%256,index/256),0);
         vec2 offset=movement.xy*(motionDeparture ? 1. : 1.-motionProgress);
-        gl_Position=project(rect.xy+offset+c*rect.zw);
-        if(camera.z<range.x || camera.z>=range.y) gl_Position=vec4(2,2,0,1);
-        texCoord=uv.xy+c*uv.zw; local=c; tint=color; tint.a*=index==0 ? sceneOpacity : mix(movement.z,movement.w,motionProgress); mode=int(kind); dimensions=rect.zw; atlasRect=uv; }`,
+        vec2 origin=rect.xy, size=rect.zw;
+        float alpha=1.; bool visible=true; mode=int(kind);
+        // Name glyphs use range as their anchor and -kind as their maximum scale.
+        if(kind<0.) {
+          float scale=mix(-kind,1.,labelDetail);
+          origin=range+(origin-range)*scale; size*=scale; mode=0;
+        } else if(mode==${DETAIL_GLYPH}) {
+          origin.y+=range.x*(1.-labelDetail); alpha=labelDetail; mode=0;
+        } else visible=camera.z>=range.x && camera.z<range.y;
+        gl_Position=visible ? project(origin+offset+c*size) : vec4(2,2,0,1);
+        texCoord=uv.xy+c*uv.zw; local=c; tint=color;
+        tint.a*=alpha*(index==0 ? sceneOpacity : mix(movement.z,movement.w,motionProgress)); dimensions=size; atlasRect=uv; }`,
       `#version 300 es
       precision highp float; precision highp int;
       in vec2 texCoord; in vec2 local; in vec4 tint; flat in int mode; flat in vec2 dimensions; flat in vec4 atlasRect;
@@ -185,6 +209,7 @@ export function createGpuScene(
     uploadMotion();
     const motionUniform = gl.getUniformLocation(spriteProgram, "motionProgress");
     const departureUniform = gl.getUniformLocation(spriteProgram, "motionDeparture");
+    const labelDetailUniform = gl.getUniformLocation(spriteProgram, "labelDetail");
     gl.useProgram(spriteProgram);
     gl.uniform1i(gl.getUniformLocation(spriteProgram, "motionAtlas"), 1);
     const cameraUniforms = [spriteProgram, lineProgram].map((p) => ({
@@ -309,43 +334,48 @@ export function createGpuScene(
       node: Pick<PersonNodeType, "id" | "position" | "width"> & {
         data: Pick<PersonNodeType["data"], "outsideSpotlight" | "dimmed">;
       },
-      top: number,
-      size: number,
-      lineHeight: number,
-      maxLines: number,
-      bold: boolean,
-      low: number,
-      high: number,
-      alignRight = false,
-      targetLabels = labels,
+      { top, size, lineHeight, maxLines, name = false, detailShift, alignRight }: LabelStyle,
+      targets: number[][],
     ) => {
-      if (!value) return 0;
-      // Preserve each layout exactly, retaining only its typed CPU data after
-      // construction. Household captions belong to all three zoom ranges.
-      const targets = low === 0 && high === 10
-        ? targetLabels
-        : [targetLabels[low === 0 ? 0 : low === 0.18 ? 1 : 2]];
+      if (!value) return { bottom: top, shift: 0 };
       // Separate glyphs cannot shape joining scripts or combining sequences.
       // Use the native text renderer for these archives instead of corrupting names.
       if (/[\u0300-\u036f\u0590-\u0fff\u200d]/u.test(value))
         throw new Error("Native text shaping required");
       const position = basePositions.get(node.id) || node.position;
-      const maxWidth = (node.width || 220) - 16,
+      const width = node.width || 220,
+        center = position.x + width / 2,
         scale = size / gpuFontSize;
       const rows = layoutGpuText(
         value,
-        maxWidth,
+        width - 16,
         maxLines,
-        (letter) => glyph(letter, bold).advance * scale,
+        (letter) => glyph(letter, name).advance * scale,
       );
+      let nameScale = 1;
+      if (name) {
+        // Keep the full-size line breaks at every zoom. Measure the glyph
+        // quads as well as advances, since side bearings can overhang a row.
+        let reach = 0;
+        for (const row of rows) {
+          let x = -row.width / 2;
+          for (const letter of row.value) {
+            const g = glyph(letter, true);
+            reach = Math.max(reach, Math.abs(x + g.left * scale), Math.abs(x + (g.left + g.width) * scale));
+            x += g.advance * scale;
+          }
+        }
+        nameScale = Math.max(1, Math.min(MAX_NAME_SCALE, (width / 2 - 6) / reach));
+      }
+      const kind = name ? -nameScale : detailShift === undefined ? 0 : DETAIL_GLYPH;
       for (const [index, line] of rows.entries()) {
         let x =
           position.x +
           (alignRight
-            ? (node.width || 220) - 14 - line.width
-            : ((node.width || 220) - line.width) / 2);
+            ? width - 14 - line.width
+            : (width - line.width) / 2);
         for (const letter of line.value) {
-          const g = glyph(letter, bold);
+          const g = glyph(letter, name);
           for (const target of targets)
             target.push(
               x + g.left * scale,
@@ -357,46 +387,38 @@ export function createGpuScene(
               g.y / FONT_SIZE,
               g.width / FONT_SIZE,
               g.height / FONT_SIZE,
-              low,
-              high,
-              ...(bold ? [40 / 255, 60 / 255, 54 / 255] : [104 / 255, 118 / 255, 111 / 255]),
+              name ? center : detailShift ?? 0,
+              name ? position.y + top : 10,
+              ...(name ? [40 / 255, 60 / 255, 54 / 255] : [104 / 255, 118 / 255, 111 / 255]),
               node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
-              0,
+              kind,
               motion.index(node.id),
             );
           x += g.advance * scale;
         }
       }
-      return Math.min(rows.length, maxLines);
+      return { bottom: top + rows.length * lineHeight, shift: rows.length * lineHeight * (nameScale - 1) };
     };
     const nodeLabels = new Map<string, readonly string[]>();
-    const relationTops = new Map<string, readonly [number, number]>();
+    const relationPlacement = new Map<string, { top: number; detailShift: number }>();
     for (const node of nodes) {
       const name = fullName(node.data.person),
         dates = years(node.data.person);
       nodeLabels.set(node.id, [name, dates]);
-      text(name, node, 146, 22, 24, 2, true, 0, 0.18);
-      const overviewLines = text(name, node, 146, 22, 24, 2, true, 0.18, 0.52);
-      const overviewDates = 146 + overviewLines * 24 + 4;
-      text(dates, node, overviewDates, 20, 24, 1, false, 0.18, 0.52);
-      const fullLines = text(name, node, 146, 22, 24, 2, true, 0.52, 10);
-      const fullDates = 146 + fullLines * 24 + 4;
-      text(dates, node, fullDates, 20, 24, 1, false, 0.52, 10);
-      relationTops.set(node.id, [overviewDates + (dates ? 28 : 0), fullDates + (dates ? 28 : 0)]);
+      const { bottom, shift: detailShift } = text(name, node,
+        { top: 146, size: NAME_SIZE, lineHeight: 24, maxLines: 2, name: true }, labels);
+      const top = bottom + 4;
+      text(dates, node, { top, size: 20, lineHeight: 24, maxLines: 1, detailShift }, [labels[1], labels[2]]);
+      relationPlacement.set(node.id, { top: top + (dates ? 28 : 0), detailShift });
     }
     for (const node of households)
       if (node.data.label)
         text(
           node.data.label,
           { ...node, data: { dimmed: false } },
-          node.data.reverse ? 5 : (node.height || 264) - 21,
-          12,
-          16,
-          1,
-          false,
-          0,
-          10,
-          true,
+          { top: node.data.reverse ? 5 : (node.height || 264) - 21, size: 12,
+            lineHeight: 16, maxLines: 1, alignRight: true },
+          labels,
         );
     labelArrays = labels.map((data) => {
       const array = new Float32Array(data);
@@ -473,9 +495,9 @@ export function createGpuScene(
       canvas.dataset.gpuRelationsReady = "false";
       cancelRelations = scheduleGpuLabelPreparation(snapshot.length, (index) => {
         const node = snapshot[index], value = readLabel(node);
-        const [overview, full] = relationTops.get(node.id)!;
-        text(value, node, overview, 14, 16, 1, false, 0.18, 0.52, false, pending);
-        text(value, node, full, 14, 16, 2, false, 0.52, 10, false, pending);
+        const placement = relationPlacement.get(node.id)!;
+        text(value, node, { ...placement, size: 14, lineHeight: 16, maxLines: 1 }, [pending[1]]);
+        text(value, node, { ...placement, size: 14, lineHeight: 16, maxLines: 2 }, [pending[2]]);
       }, () => {
         relationArrays = pending.map(data => {
           const array = new Float32Array(data);
@@ -684,6 +706,8 @@ export function createGpuScene(
           gl.uniform2f(cameraUniforms[i].viewport, width, height);
         });
         gl.useProgram(spriteProgram);
+        const detail = Math.max(0, Math.min(1, (camera.zoom - LABEL_FAR_ZOOM) / (LABEL_DETAIL_ZOOM - LABEL_FAR_ZOOM)));
+        gl.uniform1f(labelDetailUniform, detail * detail * (3 - 2 * detail));
         const progress = options.progress ?? 1;
         motion.progress(progress);
         if (lastMotionProgress < 1 && progress === 1) portraitDirty = true;
@@ -841,7 +865,7 @@ export function createGpuScene(
           bind(batch, 16, [4, 4, 2, 4, 1, 1]);
         }
         gl.bindTexture(gl.TEXTURE_2D, fontTexture);
-        const nextLabelLod = camera.zoom < 0.18 ? 0 : camera.zoom < 0.52 ? 1 : 2;
+        const nextLabelLod = camera.zoom < LABEL_FAR_ZOOM ? 0 : camera.zoom < LABEL_FULL_ZOOM ? 1 : 2;
         if (nextLabelLod !== labelLod || nextLabelLod !== relationLod) {
           const array = labelArrays[nextLabelLod];
           const relations = relationArrays[nextLabelLod];

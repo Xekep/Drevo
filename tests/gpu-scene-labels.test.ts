@@ -8,6 +8,7 @@ function fixture(t: TestContext) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let programs = 0, redraws = 0, glyphUploads = 0;
   const uploads: Float32Array[] = [];
+  const details: number[] = [];
   const constants = new Map<string, number>([["NO_ERROR", 0]]);
   const methods: Record<string, unknown> = {
     getExtension: () => null,
@@ -16,6 +17,8 @@ function fixture(t: TestContext) {
     getProgramParameter: () => true,
     getError: () => 0,
     createProgram: () => ({ program: ++programs }),
+    getUniformLocation: (_program: unknown, name: string) => name,
+    uniform1f: (name: string, value: number) => { if (name === "labelDetail") details.push(value); },
     bufferData: (_target: number, data: Float32Array) => uploads.push(data.slice()),
     texImage2D: (_target: number, _level: number, format: number) => {
       if (format === constants.get("R8")) glyphUploads++;
@@ -67,8 +70,66 @@ function fixture(t: TestContext) {
     assert.equal(canvas.dataset.gpuRelationsReady, "true");
   };
   return { create, nodes, canvas, finish, programs: () => programs, redraws: () => redraws,
-    glyphUploads: () => glyphUploads, uploads };
+    glyphUploads: () => glyphUploads, uploads, details };
 }
+
+test("name enlargement and detail fade use one zoom value and preserve the text layout", t => {
+  const setup = fixture(t);
+  setup.nodes[1].data.person.surname = "Оченьдлиннаядвойнаяфамилия";
+  setup.nodes[1].data.person.patronymic = "Константинович";
+  const scene = setup.create(() => "двоюродный брат");
+  const draw = (zoom: number) => scene.draw({ x: 0, y: 0, zoom }, 800, 600);
+  draw(0.45);
+  setup.finish();
+  draw(0.45);
+  const textUploads = () => setup.uploads.filter(data => data[14] < 0 || data[14] === 130);
+  const text = textUploads().find(data => data[14] < 0)!;
+  const instances = (data: Float32Array) =>
+    Array.from({ length: data.length / 16 }, (_, i) => data.subarray(i * 16, (i + 1) * 16));
+  const quads = instances(text);
+  const relations = textUploads().filter(data => data[14] === 130).flatMap(instances);
+  for (const { position } of setup.nodes.slice(0, 2)) {
+    const center = position.x + 110;
+    const names = quads.filter(q => q[14] < 0 && q[8] === center);
+    assert.ok(names.length > 0);
+    const scale = -names[0][14];
+    assert.ok(scale > 1 && scale <= 28 / 22 + 1e-6);
+    if (position.x === 0) assert.ok(Math.abs(scale - 28 / 22) < 1e-6);
+    else assert.ok(scale < 28 / 22 - 0.01);
+    for (const glyph of names) {
+      const [x, , width] = glyph;
+      assert.equal(glyph[14], -scale, "all glyphs of a name scale together");
+      assert.equal(glyph[9], 146);
+      assert.ok(center + (x - center) * scale >= position.x + 6 - 1e-4);
+      assert.ok(center + (x + width - center) * scale <= position.x + 214 + 1e-4);
+    }
+    const dates = quads.find(q => q[14] === 130 && Math.abs(q[0] - center) < 55)!;
+    const lines = position.x === 0 ? 1 : 2;
+    assert.ok(Math.abs(dates[8] - lines * 24 * (scale - 1)) < 1e-5);
+    assert.ok(relations.some(glyph => Math.abs(glyph[0] - center) < 55 && Math.abs(glyph[8] - dates[8]) < 1e-5));
+  }
+  const count = textUploads().length;
+  assert.equal(setup.details.at(-1), 1);
+  const zooms = [0.4, 0.39, 0.29, 0.19, 0.18];
+  for (const zoom of zooms) draw(zoom);
+  const [above, start, middle, end, below] = setup.details.slice(-zooms.length);
+  assert.equal(above, 1);
+  assert.ok(start < 1 && start > middle);
+  assert.ok(Math.abs(middle - 0.5) < 1e-12);
+  assert.ok(end > 0 && end < middle);
+  assert.equal(below, 0);
+  assert.equal(textUploads().length, count, "zoom inside one LOD does not upload glyph geometry");
+  draw(0.17);
+  assert.equal(setup.details.at(-1), 0);
+  assert.equal(setup.canvas.dataset.gpuLabelLod, "0");
+  const distant = textUploads().at(-1)!;
+  assert.equal(distant.length, 16 * quads.filter(q => q[14] < 0).length);
+  let index = 0;
+  for (const glyph of quads.filter(q => q[14] < 0)) {
+    assert.deepEqual(distant.subarray(index, index + 16), glyph);
+    index += 16;
+  }
+});
 
 test("zoom-dependent crossing paths update GPU lines without rebuilding text or programs", t => {
   const setup = fixture(t), read = () => "";
