@@ -57,6 +57,20 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
         ? "Drevo GPU integration test"
         : get.call(this, parameter);
     };
+    const detailUniforms = new WeakSet<WebGLUniformLocation>();
+    const label = { detail: NaN };
+    Object.assign(window, { __gpuLabel: label });
+    const getUniformLocation = WebGL2RenderingContext.prototype.getUniformLocation;
+    WebGL2RenderingContext.prototype.getUniformLocation = function (program, name) {
+      const location = getUniformLocation.call(this, program, name);
+      if (name === "labelDetail" && location) detailUniforms.add(location);
+      return location;
+    };
+    const uniform1f = WebGL2RenderingContext.prototype.uniform1f;
+    WebGL2RenderingContext.prototype.uniform1f = function (location, value) {
+      if (location && detailUniforms.has(location)) label.detail = value;
+      uniform1f.call(this, location, value);
+    };
     const gpuResources = { programs: 0, glyphUploads: 0 };
     Object.assign(window, { __gpuResources: gpuResources });
     const portraitUploads = { count: 0 };
@@ -127,9 +141,10 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
     data.family.people = people.map((person, index) => ({
       ...person,
       sex: index % 2 ? "f" : "m",
-      name: person.id,
-      surname: "Тестов",
-      patronymic: "",
+      name: medium && index % 8 === 0 ? "Александр" : person.id,
+      surname: medium && index % 8 === 0 ? "Достоевский-Волконский" : "Тестов",
+      patronymic: medium && index % 8 === 0 ? "Константинович" : "",
+      birth: medium ? "1900" : person.birth,
       birthPlace: "",
       sources: [],
       generation: 1,
@@ -278,13 +293,28 @@ test(`${medium ? "250-card" : "3313 desktop / 503 mobile"} GPU tree keeps bounde
         .toBe(originalViewport.width);
       const bounds = (await page.locator(".react-flow__pane").boundingBox())!;
       await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-      await page.keyboard.down("Control");
-      for (let attempt = 0; attempt < 4 && Math.abs(0.3 - await zoom()) > 0.0003; attempt++) {
-        await page.mouse.wheel(0, -Math.log(0.3 / await zoom()) / 0.002);
-        await page.waitForTimeout(150);
+      const zoomTo = async (target: number) => {
+        const distance = async () => Math.abs(target - await zoom());
+        const tolerance = 0.004;
+        await page.keyboard.down("Control");
+        try {
+          // Chromium rounds wheel deltas to integral pixels.
+          for (let attempt = 0; attempt < 4 && await distance() >= tolerance; attempt++) {
+            await page.mouse.wheel(0, -Math.log(target / await zoom()) / 0.002);
+            await page.waitForTimeout(150);
+          }
+        } finally { await page.keyboard.up("Control"); }
+        await expect.poll(distance, { message: `camera reaches zoom ${target}` }).toBeLessThan(tolerance);
+      };
+      const labelDetail = () => page.evaluate(() =>
+        (window as typeof window & { __gpuLabel: { detail: number } }).__gpuLabel.detail);
+      for (const [target, detail, lod] of [[0.41, 1, 1], [0.17, 0, 0], [0.29, 0.5, 1]]) {
+        await zoomTo(target);
+        if (detail === 0.5) await expect.poll(labelDetail).toBeCloseTo(detail, 1);
+        else await expect.poll(labelDetail).toBe(detail);
+        await expect(canvas).toHaveAttribute("data-gpu-label-lod", String(lod));
       }
-      await page.keyboard.up("Control");
-      await expect.poll(zoom).toBeCloseTo(0.3, 3);
+      await zoomTo(0.3);
       await page.screenshot({ path: testInfo.outputPath("gpu-zoom-30.png") });
     }
     if (medium) {

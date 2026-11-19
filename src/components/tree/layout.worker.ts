@@ -1,10 +1,11 @@
-import { treeNodeSize } from "../../domain/tree-layout-constants";
+import { treeNodeSize, TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "../../domain/tree-layout-constants";
 import { unionGeometry } from "../../domain/union-layout";
 import { unionTimeline } from "../../domain/union-timeline";
 import { createUnionLayout } from "./elk-layout";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 import { optimizeDisplayedTree } from "../../domain/optimize-tree-layout";
 import { localTreeLayout } from "../../domain/local-tree-layout";
+import { spaceFamilyRoutes } from "../../domain/family-route-spacing";
 
 let engine: ReturnType<typeof createUnionLayout> | undefined;
 self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
@@ -30,12 +31,13 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
     if (mode === "generations" && previousGeometry?.mode === mode && previousGeometry.reverse === reverse && previousInput) {
       const local = localTreeLayout({ people, links }, previousInput, previousGeometry, treeNodeSize());
       if (local) {
-        self.postMessage({ requestId, geometry: local.geometry, updateKind: local.kind });
+        const geometry = local.kind === "local" ? spaceFamilyRoutes(local.geometry) : local.geometry;
+        self.postMessage({ requestId, geometry, updateKind: local.kind });
         return;
       }
     }
     engine ??= createUnionLayout();
-    const geometry =
+    const layout =
       mode === "generations"
         ? await unionGeometry(
             people,
@@ -53,6 +55,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
             reverse,
             links,
           );
+    const geometry = spaceFamilyRoutes(layout, layout.nodeSize || { width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT });
     // Совместимость с built-worker тестом и старым протоколом оставляем намеренно.
     self.postMessage(
       requestId === undefined ? geometry : { requestId, geometry, updateKind: "full" },

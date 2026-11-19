@@ -135,6 +135,27 @@ test("production worker runs the bounded joint family order in both directions",
     }
   } finally { await worker.terminate(); }
 });
+test("production worker spaces long neighboring lines from different families", { timeout: 15000 }, async () => {
+  const worker = productionWorker(), data = randomFamily(1, 2), size = treeNodeSize();
+  const score = createGeometryContactScorer(size.width, size.height);
+  try {
+    for (const reverse of [false, true]) {
+      const geometry = await calculate(worker, "generations", reverse, data, "portrait");
+      assert.equal(geometry.error, undefined);
+      assert.equal(score.quality(geometry).crossings, 10);
+      assert.equal(score.cardContacts(geometry), 0);
+      const horizontals = geometry.branches.flatMap(branch => branch.route.points.slice(1).flatMap((b, i) => {
+        const a = branch.route.points[i];
+        return a.y === b.y && a.x !== b.x ? [{ union: branch.union, y: a.y,
+          left: Math.min(a.x, b.x), right: Math.max(a.x, b.x) }] : [];
+      }));
+      const gaps = horizontals.flatMap((a, i) => horizontals.slice(i + 1)
+        .filter(b => a.union !== b.union && Math.min(a.right, b.right) - Math.max(a.left, b.left) >= 48)
+        .map(b => Math.abs(a.y - b.y)));
+      assert.equal(Math.min(...gaps), 20);
+    }
+  } finally { await worker.terminate(); }
+});
 test("production worker opens a crowded partner slot without moving distant cards or generations", { timeout: 10000 }, async () => {
   const worker = productionWorker();
   try {
